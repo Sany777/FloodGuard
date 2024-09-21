@@ -1,11 +1,13 @@
 
 // [formName [type, max limit, min limit,[inputNames],]]
 const FORMS_LIST = [
-  ['Network',[['text','32','1',['SSID']],['text','32','8',['PWD']]]],
-  ['API',[['text','32','1',['ChatID']],['text','32','32',['Token']]]],
-  ['Latency',[['number','100','0',['Sec']]]],
-  ['Sensity',[['number','99','0',['%']]]],
-  ['Status',[['checkbox',0,,['Off','WiFi conf. Ok','Telegram API Ok','Allarm',]]]]
+  ['WiFi',[['text','32','1',['SSID']],['text','32','8',['Password']]]],
+  ['Telegram',[['text','32','1',['ChatID']],['text','55','32',['Token']]]],
+  ['Place',[['text','55','1',['Name']]]],
+  ['Delay start',[['number','100','0',['Sec']]]],
+  ['Time offset',[['number','23','-23',['Offset']]]],
+  ['Battery settings',[['number','30000','2800',['Real voltage, mV']],['number','30000','2800',['Min voltage, mV']],['number','30000','2800',['Max voltage, mV']]]],
+  ['Status',[['checkbox',5,,['Limescale prevention','Guard disable','Info notification  disable','Notification  disable','Wet sensor','Allarm','WiFi conf. err','Telegram conf. err']]]]
 ];
 
 const modal = window.document.getElementById('modal');
@@ -13,7 +15,7 @@ const modal = window.document.getElementById('modal');
 
 function getSetting()
 {
-  fetch('/data?', {
+  fetch('/setting?', {
     method:'POST',
     mode: 'no-cors',
     body: null,
@@ -65,10 +67,11 @@ function createForms()
           input.id = inputName;
           input.name = inputName;
           if(type === 'text'){
+            input.style.minWidth = maxLimit + 'rem';
             input.value = '';
             input.maxLength = maxLimit;
             input.minLength = minLimit;
-            input.placeholder = 'Enter '+ inputName;
+            input.placeholder = 'enter '+ inputName.toLowerCase();
           } else if(type == 'checkbox' 
               && i >= maxLimit){
             input.disabled = true;
@@ -79,9 +82,8 @@ function createForms()
           label.appendChild(input);
           form.appendChild(label);
         });
-        if(type != 'checkbox'){
-          form.appendChild(submit);
-        }
+        form.appendChild(submit);
+
     });
     container.appendChild(fieldset);
     containerForms.appendChild(container);
@@ -125,26 +127,26 @@ document.body.addEventListener('submit', (e) => {
 function sendData(formName)
 {
   const js = {};
-  let data = null;
-  let i=0;
+  let fi=0, flags=0;
   const childsList = document.forms[formName];
   if(childsList){
     for(const child of childsList){
-      let value = child.value;
-      if(value){
-        if(child.type === 'number'){
-          data = value;
-        } else if(child.type === 'text'){
-            if(data == null)
-              data = js;
-            js[child.name] = value;
+      if(child.value && child.name){
+        if(child.type === 'checkbox'){
+          if(child.checked){
+            flags |= 1<<fi;
+          }
+          fi++;
+        } else {
+          js[child.name] = child.value;
         }
       }
     }
-    if(data === js){
-      data=JSON.stringify(js);
+    if(fi){
+      sendDataForm(formName, flags);
+    } else {
+      sendDataForm(formName, JSON.stringify(js));
     }
-    sendDataForm(formName, data);
   }
 }
 

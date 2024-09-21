@@ -1,4 +1,4 @@
 idf_component_register(SRC_DIRS "src"
                         INCLUDE_DIRS "include"
-                        REQUIRES driver freertos device_common
+                        PRIV_REQUIRES driver  periodic_task device_common
                     ) 

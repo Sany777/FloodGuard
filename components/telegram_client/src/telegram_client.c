@@ -1,9 +1,8 @@
-#include "forecast_http_client.h"
+#include "telegram_client.h"
 
 #include "esp_http_client.h"
-#include "clock_module.h"
-#include "device_common.h"
 #include "device_macro.h"
+#include "device_common.h"
 
 #define SIZE_URL_BUF 500
 #define MAX_KEY_NUM 10
@@ -72,16 +71,15 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 
 int send_telegram_message(const char *token, const char *chat_id, const char *message) 
 {
-
     snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
-             token, chat_id, message);
+                token, chat_id, message);
 
- esp_http_client_config_t config = {
+    esp_http_client_config_t config = {
         .url = url,
         .event_handler = http_event_handler,
         .user_data = (void*)network_buf,    
         .method = HTTP_METHOD_GET,
-        .buffer_size = 100,
+        .buffer_size = NET_BUF_LEN,
         .auth_type = HTTP_AUTH_TYPE_NONE,
         .skip_cert_common_name_check = true
     };

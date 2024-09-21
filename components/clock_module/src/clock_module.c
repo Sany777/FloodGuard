@@ -8,7 +8,7 @@
 
 #include "device_common.h"
 #include "periodic_task.h"
-#include "toolbox.h"
+
 
 
 
@@ -21,16 +21,6 @@ struct tm* get_cur_time_tm(void)
 }
 
 
-void set_time_ms(long long time_ms)
-{
-    int offet_sec = device_get_offset() * 60 * 60;
-    struct timeval tv;
-    tv.tv_sec = time_ms/1000 + offet_sec;
-    tv.tv_usec = time_ms%1000;
-    settimeofday(&tv, NULL);
-    device_set_state(BIT_IS_TIME);
-}
-
 void set_offset(int offset_hours) 
 {
     char tz[20]; 
@@ -42,9 +32,7 @@ void set_offset(int offset_hours)
 
 static void set_time_cb(struct timeval *tv)
 {
-    tv->tv_sec += 3600 * device_get_offset();
-    settimeofday(tv, NULL);
-    device_set_state(BIT_NEW_MIN|BIT_IS_TIME|BIT_SNTP_OK);
+    device_set_state(BIT_IS_TIME);
 }
 
 
@@ -53,9 +41,12 @@ void init_sntp()
     esp_sntp_set_time_sync_notification_cb(set_time_cb);
     esp_sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_setservername(1, "time.windows.com");
-    // esp_sntp_servermode_dhcp(1);
+    esp_sntp_setservername(0, "0.ua.pool.ntp.org");
+    esp_sntp_setservername(1, "1.ua.pool.ntp.org");
+    esp_sntp_setservername(2, "2.ua.pool.ntp.org");
+    esp_sntp_setservername(3, "pool.ntp.org");
+    esp_sntp_setservername(4, "time.windows.com");
+    esp_sntp_servermode_dhcp(1);
     esp_sntp_init();
 
 }

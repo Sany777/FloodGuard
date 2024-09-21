@@ -10,11 +10,11 @@
 #include "string.h"
 #include "portmacro.h"
 #include "clock_module.h"
-#include "toolbox.h"
 #include "string.h"
 #include "device_macro.h"
 #include "wifi_service.h"
 #include "device_common.h"
+#include "adc_reader.h"
 
 
 static httpd_handle_t server;
@@ -27,11 +27,49 @@ static const char *MES_SUCCESSFUL = "Successful";
 
 
 
-#define SEND_REQ_ERR(_req_, _str_, _fail_) \
-    do{ httpd_resp_send_err((_req_), HTTPD_400_BAD_REQUEST, (_str_)); goto _fail_;}while(0)
+#define SEND_REQ_ERR(_req_, _str_) \
+    do{ httpd_resp_send_err((_req_), HTTPD_400_BAD_REQUEST, (_str_));}while(0)
 
-#define SEND_SERVER_ERR(_req_, _str_, _fail_) \
-    do{ httpd_resp_send_err((_req_), HTTPD_500_INTERNAL_SERVER_ERROR, (_str_)); goto _fail_;}while(0)
+#define SEND_SERVER_ERR(_req_, _str_) \
+    do{ httpd_resp_send_err((_req_), HTTPD_500_INTERNAL_SERVER_ERROR, (_str_));}while(0)
+
+
+static cJSON * get_json_data(httpd_req_t *req)
+{
+    int received,
+        total_len = req->content_len;
+    char * server_buf = (char *)req->user_ctx;
+    if(total_len >= NET_BUF_LEN){
+        SEND_REQ_ERR(req, MES_DATA_TOO_LONG);
+        return NULL;
+    }
+    received = httpd_req_recv(req, server_buf, total_len);
+    if (received != total_len) {
+        SEND_SERVER_ERR(req, MES_DATA_NOT_READ);
+        return NULL;
+    }
+    server_buf[received] = 0;
+    return cJSON_Parse(server_buf);
+}
+
+static int get_num_data(httpd_req_t *req, int *val)
+{
+    int received,
+        total_len = req->content_len;
+    char * server_buf = (char *)req->user_ctx;
+    if(total_len >= NET_BUF_LEN){
+        SEND_REQ_ERR(req, MES_DATA_TOO_LONG);
+        return ESP_FAIL;
+    }
+    received = httpd_req_recv(req, server_buf, total_len);
+    if (received != total_len) {
+       SEND_SERVER_ERR(req, MES_DATA_NOT_READ);
+       return ESP_FAIL;
+    }
+    server_buf[total_len] = 0;
+    *val = atoi(server_buf);
+    return ESP_OK;
+}
 
 
 void server_stop()
@@ -84,27 +122,17 @@ static esp_err_t handler_close(httpd_req_t *req)
 }
 
 
-static esp_err_t handler_set_network(httpd_req_t *req)
+static esp_err_t set_wifi_conf_handler(httpd_req_t *req)
 {
     cJSON *root, *ssid_name_j, *pwd_wifi_j;
-    int received;
-    const size_t total_len = req->content_len;
-    char * server_buf = (char *)req->user_ctx;
-    if(total_len >= NET_BUF_LEN){
-        SEND_REQ_ERR(req, MES_DATA_TOO_LONG, fail_1);
-    }
-    received = httpd_req_recv(req, server_buf, total_len);
-    if (received != total_len) {
-        SEND_SERVER_ERR(req, MES_DATA_NOT_READ, fail_1);
-    }
-    server_buf[received] = 0;
-    root = cJSON_Parse(server_buf);
+    root = get_json_data(req);
     if(!root){
-        SEND_SERVER_ERR(req, MES_NO_MEMORY, fail_1);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, MES_NO_MEMORY);
+        return ESP_FAIL;
     }
 
     ssid_name_j = cJSON_GetObjectItemCaseSensitive(root, "SSID");
-    pwd_wifi_j = cJSON_GetObjectItemCaseSensitive(root, "PWD");
+    pwd_wifi_j = cJSON_GetObjectItemCaseSensitive(root, "Password");
     
     if(cJSON_IsString(ssid_name_j) && (ssid_name_j->valuestring != NULL)){
         device_set_ssid(ssid_name_j->valuestring);
@@ -115,46 +143,54 @@ static esp_err_t handler_set_network(httpd_req_t *req)
     cJSON_Delete(root);
     httpd_resp_sendstr(req, MES_SUCCESSFUL);
     return ESP_OK;
-
-fail_1:
-    return ESP_FAIL;
 }
 
-static esp_err_t handler_set_openweather_data(httpd_req_t *req)
+
+
+static esp_err_t set_baterry_conf_handler(httpd_req_t *req)
 {
-    cJSON *root, *city_j, *key_j;
-    int received;
-    const int total_len = req->content_len;
-    char * server_buf = (char *)req->user_ctx;
-    if(total_len >= NET_BUF_LEN){
-        SEND_REQ_ERR(req, MES_DATA_TOO_LONG, fail_1);
-    }
-    received = httpd_req_recv(req, server_buf, total_len);
-    if (received != total_len) {
-        SEND_SERVER_ERR(req, MES_DATA_NOT_READ, fail_1);
-    }
-    server_buf[received] = 0;
-    root = cJSON_Parse(server_buf);
+    cJSON *root, *min_mv_j, *max_mv_j, *real_volt_j;
+    root = get_json_data(req);
     if(!root){
-        SEND_SERVER_ERR(req, MES_NO_MEMORY, fail_1);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, MES_NO_MEMORY);
+        return ESP_FAIL;
     }
-    city_j = cJSON_GetObjectItemCaseSensitive(root, "City");
-    key_j = cJSON_GetObjectItemCaseSensitive(root, "Key");
-    if(cJSON_IsString(city_j) && (city_j->valuestring != NULL)){
-        device_set_chat_id(city_j->valuestring);
+
+    min_mv_j = cJSON_GetObjectItemCaseSensitive(root, "Min voltage, mV");
+    max_mv_j = cJSON_GetObjectItemCaseSensitive(root, "Max voltage, mV");
+    real_volt_j = cJSON_GetObjectItemCaseSensitive(root, "Real voltage, mV");
+
+    if(cJSON_IsNumber(min_mv_j) && cJSON_IsNumber(max_mv_j) && cJSON_IsNumber(real_volt_j)
+    && device_set_bat_conf(min_mv_j->valueint, max_mv_j->valueint, real_volt_j->valueint)){
+        httpd_resp_sendstr(req, MES_SUCCESSFUL);
+    } else {
+        SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT);
     }
-    if(cJSON_IsString(key_j) && (key_j->valuestring != NULL)){
-        device_set_token(key_j->valuestring);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static esp_err_t set_telegram_data_handler(httpd_req_t *req)
+{
+    cJSON *root, *chat_id_j, *token_j;
+    root = get_json_data(req);
+    if(!root){
+        SEND_SERVER_ERR(req, MES_NO_MEMORY);
+    }
+    chat_id_j = cJSON_GetObjectItemCaseSensitive(root, "ChatID");
+    token_j = cJSON_GetObjectItemCaseSensitive(root, "Token");
+    if(cJSON_IsString(chat_id_j) && (chat_id_j->valuestring != NULL)){
+        device_set_chat_id(chat_id_j->valuestring);
+    }
+    if(cJSON_IsString(token_j) && (token_j->valuestring != NULL)){
+        device_set_token(token_j->valuestring);
     }
     cJSON_Delete(root);
     httpd_resp_sendstr(req, MES_SUCCESSFUL);
     return ESP_OK;
-
-fail_1:
-    return ESP_FAIL;
 }
 
-const char *get_chip(int model_id)
+static const char *get_chip(int model_id)
 {
     switch(model_id){
         case 1: return "ESP32";
@@ -168,237 +204,115 @@ const char *get_chip(int model_id)
     return "uknown";
 }
 
-static esp_err_t handler_get_info(httpd_req_t *req)
+static esp_err_t get_info_handler(httpd_req_t *req)
 {
     char * server_buf = (char *)req->user_ctx;
+    bat_conf_t *bat_conf = device_get_bat_conf();
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
-    snprintf(server_buf, 200, "idf version %s\nchip %s\nrevision %u", 
-                    IDF_VER, 
-                    get_chip(chip_info.model), 
-                    chip_info.revision);
+    snprintf(server_buf, 200, "chip: %s\nvoltage: %u mV\nbaterry: %u%%\n%s",
+                get_chip(chip_info.model), 
+                get_voltage_mv(bat_conf),
+                get_voltage_perc(bat_conf),
+                snprintf_time("%c")
+            );
     httpd_resp_sendstr(req, server_buf);
     return ESP_OK;
 }
 
-static esp_err_t handler_set_time(httpd_req_t *req)
+
+static esp_err_t get_settings_handler(httpd_req_t *req)
 {
-    long long time;
-    int received;
-    const int total_len = req->content_len;
-    char * server_buf = (char *)req->user_ctx;
-    if(total_len >= NET_BUF_LEN){
-        SEND_REQ_ERR(req, MES_DATA_TOO_LONG, fail);
+    cJSON * root = cJSON_CreateObject();
+    bat_conf_t *bat_conf = device_get_bat_conf();
+    if(root){
+        cJSON_AddStringToObject(root, "SSID", device_get_ssid());
+        cJSON_AddStringToObject(root, "Password", device_get_pwd());
+        cJSON_AddStringToObject(root, "Token", device_get_token());
+        cJSON_AddStringToObject(root, "Name ", device_get_placename());
+        cJSON_AddStringToObject(root, "ChatID", device_get_chat_id());
+        cJSON_AddNumberToObject(root, "Sec", device_get_delay());
+        cJSON_AddNumberToObject(root, "Offset", device_get_offset());
+        cJSON_AddNumberToObject(root, "Status", device_get_state());
+        cJSON_AddNumberToObject(root, "Real voltage, mV", get_voltage_mv(bat_conf));
+        cJSON_AddNumberToObject(root, "Min voltage, mV", bat_conf->min_mVolt);
+        cJSON_AddNumberToObject(root, "Max voltage, mV", bat_conf->max_mVolt);
+        char *data_to_send = cJSON_Print(root);
+        cJSON_Delete(root);
+        if(data_to_send){
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_sendstr(req, data_to_send);
+            free(data_to_send);
+            data_to_send = NULL;
+            return ESP_OK;
+        }
     }
-    received = httpd_req_recv(req, server_buf, total_len);
-    if (received != total_len){
-        SEND_REQ_ERR(req, MES_DATA_NOT_READ, fail);
-    }
-    server_buf[total_len] = 0;
-    time = atoll(server_buf);
-    set_time_ms(time);
-    httpd_resp_sendstr(req, MES_SUCCESSFUL);
+    SEND_SERVER_ERR(req, MES_NO_MEMORY);
     return ESP_OK;
-fail:
-    return ESP_FAIL;
-}
-
-
-
-
-static esp_err_t handler_give_data(httpd_req_t *req)
-{
-    char *data_to_send;
-    cJSON *root;
-    char *notif_data_str = (char *)req->user_ctx;
-    char schema_data_str[WEEK_DAYS_NUM*2+1];
-    unsigned *schema = device_get_schema();
-    unsigned *notify = device_get_notif();
-    size_t notif_data_str_size = get_notif_size(schema);
-    if(notif_data_str_size < NET_BUF_LEN){
-        num_arr_to_str(notif_data_str,  notify, 4, notif_data_str_size);
-    } else {
-        notif_data_str_size = 0;
-    }
-    notif_data_str[notif_data_str_size] = 0;
-    num_arr_to_str(schema_data_str, schema, 2, WEEK_DAYS_NUM);
-    httpd_resp_set_type(req, "application/json");
-
-    root = cJSON_CreateObject();
-    if(!root){
-        SEND_REQ_ERR(req, MES_NO_MEMORY, fail_1);
-    }
-    // input id | value
-    cJSON_AddStringToObject(root, "SSID", device_get_ssid());
-    cJSON_AddStringToObject(root, "PWD", device_get_pwd());
-    cJSON_AddStringToObject(root, "Key", device_get_token());
-    cJSON_AddStringToObject(root, "City", device_get_chat_id());
-    cJSON_AddNumberToObject(root, "Status", device_get_state());
-    cJSON_AddStringToObject(root, "schema", schema_data_str);
-    cJSON_AddStringToObject(root, "notif", notif_data_str);
-    cJSON_AddNumberToObject(root, "Hour", device_get_offset());
-    cJSON_AddNumberToObject(root, "%", device_get_loud());
-    data_to_send = cJSON_Print(root);
-
-    if(!data_to_send){
-        SEND_REQ_ERR(req, MES_NO_MEMORY, fail_2);
-    }
-    httpd_resp_sendstr(req, data_to_send);
-    free(data_to_send);
-    data_to_send = NULL;
-    cJSON_Delete(root);
-
-    return ESP_OK;
-
-fail_2:
-    cJSON_Delete(root);
-
-fail_1:
-
-    return ESP_FAIL;
 }
 
 	
 
-static esp_err_t handler_set_flag(httpd_req_t *req)
+static esp_err_t set_flag_handler(httpd_req_t *req)
 {
-    unsigned flags;
-    int received,
-        total_len = req->content_len;
-    char * server_buf = (char *)req->user_ctx;
-    if(total_len >= NET_BUF_LEN){
-        SEND_REQ_ERR(req, "Content too long", fail);
-    }
-    received = httpd_req_recv(req, server_buf, total_len);
-    if (received != total_len) {
-        SEND_REQ_ERR(req, "Data not read", fail);
-    }
-    server_buf[total_len] = 0;
-    flags = atol(server_buf) & STORED_FLAGS;
-    device_set_state(flags);
-    httpd_resp_sendstr(req, "Set flags successfully");
+    int flags;
+    if(get_num_data(req, &flags) != ESP_OK) return ESP_FAIL;
+    device_set_state(flags&STORED_FLAGS);
+    httpd_resp_sendstr(req, "Successful installation of config");
     return ESP_OK;
-fail:
-    return ESP_FAIL;
 }
 
+static esp_err_t set_delay_handler(httpd_req_t *req)
+{
+    int delay_to_alarm;
+    cJSON *root, *delay_to_alarm_j;
+    root = get_json_data(req);
+    if(!root){
+        SEND_SERVER_ERR(req, MES_NO_MEMORY);
+        return ESP_FAIL;
+    }
+
+    delay_to_alarm_j = cJSON_GetObjectItemCaseSensitive(root, "Sec");
+
+    if(cJSON_IsNumber(delay_to_alarm_j)){
+        delay_to_alarm = delay_to_alarm_j->valueint;
+        if(device_set_delay(delay_to_alarm)){
+            device_set_delay(delay_to_alarm);
+            httpd_resp_sendstr(req, MES_SUCCESSFUL);
+            cJSON_Delete(root);
+            return ESP_OK;
+        }
+    }
+    cJSON_Delete(root);
+    SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT);
+    return ESP_OK;
+}
 
 static esp_err_t set_offset_handler(httpd_req_t *req)
 {
-    int received;
-    const int total_len = req->content_len;
-    char * server_buf = (char *)req->user_ctx;
-    if(total_len >= NET_BUF_LEN){
-        SEND_REQ_ERR(req, MES_DATA_TOO_LONG, fail_1);
-    }
-    received = httpd_req_recv(req, server_buf, total_len);
-    if (received != total_len) {
-        SEND_SERVER_ERR(req, MES_DATA_NOT_READ, fail_1);
-    }
-    server_buf[received] = 0;
-    httpd_resp_sendstr(req, MES_SUCCESSFUL);
-    int offset = atoi(server_buf);
-    if(offset > 23 || offset < -23){
-        SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT, fail_1);
-    }
-    device_set_offset(offset);
-    return ESP_OK;
-    
-fail_1:
-    return ESP_FAIL;
-}
-
-static esp_err_t set_loud_handler(httpd_req_t *req)
-{
-    unsigned loud = 0;
-    int received;
-    const int total_len = req->content_len;
-    char * server_buf = (char *)req->user_ctx;
-    if(total_len >= NET_BUF_LEN){
-        SEND_REQ_ERR(req, MES_DATA_TOO_LONG, fail_1);
-    }
-    received = httpd_req_recv(req, server_buf, total_len);
-    if (received != total_len) {
-        SEND_SERVER_ERR(req, MES_DATA_NOT_READ, fail_1);
-    }
-    server_buf[received] = 0;
-    httpd_resp_sendstr(req, MES_SUCCESSFUL);
-    loud = atol(server_buf);
-    if(loud > 99){
-        SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT, fail_1);
-    }
-    device_set_loud(loud);
-    return ESP_OK;
-    
-fail_1:
-    return ESP_FAIL;
-}
-
-static esp_err_t set_notif_handler(httpd_req_t *req)
-{
-    unsigned schema_data[WEEK_DAYS_NUM],
-        *notif_data, *ptr;
-    size_t notif_size, schema_size;
-    cJSON *root, *notif_data_j, *notif_schema_j;
-    char *notif_str, *schema_str;
-    int received, notification_num;
-    const int total_len = req->content_len;
-    char * server_buf = (char *)req->user_ctx;
-    if(total_len >= NET_BUF_LEN){
-        SEND_REQ_ERR(req, MES_DATA_TOO_LONG, fail_1);
-    }
-    received = httpd_req_recv(req, server_buf, total_len);
-    if (received != total_len) {
-        SEND_SERVER_ERR(req, MES_DATA_NOT_READ, fail_1);
-    }
-    server_buf[received] = 0;
-    root = cJSON_Parse(server_buf);
+    int offset;
+    cJSON *root, *offset_j;
+    root = get_json_data(req);
     if(!root){
-        SEND_REQ_ERR(req, MES_NO_MEMORY, fail_1);
+        SEND_SERVER_ERR(req, MES_NO_MEMORY);
+        return ESP_FAIL;
     }
 
-    notif_data_j = cJSON_GetObjectItemCaseSensitive(root, "notif");
-    notif_schema_j = cJSON_GetObjectItemCaseSensitive(root, "schema");
-
-    if(!cJSON_IsString(notif_data_j) || notif_data_j->valuestring == NULL
-            || !cJSON_IsString(notif_schema_j) || notif_schema_j->valuestring == NULL){
-        SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT, fail_2);
+    offset_j = cJSON_GetObjectItemCaseSensitive(root, "Offset");
+    
+    if(cJSON_IsNumber(offset_j)){
+        offset = offset_j->valueint;
+        if(offset < 24 && offset > -24){
+            device_set_offset(offset);
+            httpd_resp_sendstr(req, MES_SUCCESSFUL);
+            cJSON_Delete(root);
+            return ESP_OK;
+        }
     }
-    schema_str = notif_schema_j->valuestring;
-    notif_str = notif_data_j->valuestring;
-
-    notif_size = strlen(notif_str);
-    schema_size = strlen(schema_str);
-    if(schema_size != 14 || notif_size%4 != 0 ){
-        SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT, fail_2);
-    }
-
-    for(int i=0; i<WEEK_DAYS_NUM; ++i, schema_str += 2){
-        schema_data[i] = get_num(schema_str, 2);
-    }
-    notification_num = get_notif_num(schema_data);
-    if(notification_num != notif_size/4){
-        SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT, fail_2);
-    }
-    notif_data = ptr = (unsigned *)malloc(notification_num*sizeof(int));
-    if (notif_data == NULL) {
-        SEND_SERVER_ERR(req, MES_DATA_NOT_READ, fail_2);
-    }
-    for(int i=0; i<notification_num; ++i, notif_str += 4){
-        notif_data[i] = get_num(notif_str, 4);
-    }
-    device_set_notify_data(schema_data, notif_data);
     cJSON_Delete(root);
-    httpd_resp_sendstr(req, MES_SUCCESSFUL);
+    SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT);
     return ESP_OK;
-
-fail_2:
-    cJSON_Delete(root);
-fail_1:
-    return ESP_FAIL;
 }
-
-
 
 
 
@@ -428,7 +342,7 @@ int init_server(char *server_buf)
     httpd_uri_t set_flags = {
         .uri      = "/Status",
         .method   = HTTP_POST,
-        .handler  = handler_set_flag,
+        .handler  = set_flag_handler,
         .user_ctx = server_buf
     };
     httpd_register_uri_handler(server, &set_flags);
@@ -436,15 +350,15 @@ int init_server(char *server_buf)
     httpd_uri_t get_info = {
         .uri      = "/info?",
         .method   = HTTP_POST,
-        .handler  = handler_get_info,
+        .handler  = get_info_handler,
         .user_ctx = server_buf
     };
     httpd_register_uri_handler(server, &get_info);
 
     httpd_uri_t get_setting = {
-        .uri      = "/data?",
+        .uri      = "/settings?",
         .method   = HTTP_POST,
-        .handler  = handler_give_data,
+        .handler  = get_settings_handler,
         .user_ctx = server_buf
     };
     httpd_register_uri_handler(server, &get_setting);
@@ -457,29 +371,21 @@ int init_server(char *server_buf)
     };
     httpd_register_uri_handler(server, &close_uri);
 
-     httpd_uri_t net_uri = {
-        .uri      = "/Network",
+     httpd_uri_t wifi_uri = {
+        .uri      = "/WiFi",
         .method   = HTTP_POST,
-        .handler  = handler_set_network,
+        .handler  = set_wifi_conf_handler,
         .user_ctx = server_buf
     };
-    httpd_register_uri_handler(server, &net_uri);
+    httpd_register_uri_handler(server, &wifi_uri);
 
     httpd_uri_t api_uri = {
-        .uri      = "/Openweather",
+        .uri      = "/Telegram",
         .method   = HTTP_POST,
-        .handler  = handler_set_openweather_data,
+        .handler  = set_telegram_data_handler,
         .user_ctx = server_buf
     };
     httpd_register_uri_handler(server, &api_uri);
-
-     httpd_uri_t time_uri = {
-        .uri      = "/time",
-        .method   = HTTP_POST,
-        .handler  = handler_set_time,
-        .user_ctx = server_buf
-    };
-    httpd_register_uri_handler(server, &time_uri);
 
      httpd_uri_t index_uri = {
         .uri      = "/index.html",
@@ -505,14 +411,6 @@ int init_server(char *server_buf)
     };
     httpd_register_uri_handler(server, &get_script);
 
-     httpd_uri_t notif_uri = {
-        .uri      = "/Notification",
-        .method   = HTTP_POST,
-        .handler  = set_notif_handler,
-        .user_ctx = server_buf
-    };
-    httpd_register_uri_handler(server, &notif_uri);
-
      httpd_uri_t redir_uri = {
         .uri      = "/*",
         .method   = HTTP_GET,
@@ -521,6 +419,29 @@ int init_server(char *server_buf)
     };
     httpd_register_uri_handler(server, &redir_uri);
 
+    httpd_uri_t set_delay_uri = {
+        .uri      = "/Delay start",
+        .method   = HTTP_POST,
+        .handler  = set_delay_handler,
+        .user_ctx = server_buf
+    };
+    httpd_register_uri_handler(server, &set_delay_uri);
+
+    httpd_uri_t set_baterry_uri = {
+        .uri      = "/Battery settings",
+        .method   = HTTP_POST,
+        .handler  = set_baterry_conf_handler,
+        .user_ctx = server_buf
+    };
+    httpd_register_uri_handler(server, &set_baterry_uri);
+
+        httpd_uri_t set_telegram_uri = {
+        .uri      = "/Telegram",
+        .method   = HTTP_POST,
+        .handler  = set_telegram_data_handler,
+        .user_ctx = server_buf
+    };
+    httpd_register_uri_handler(server, &set_telegram_uri);
     httpd_uri_t set_offset_uri = {
         .uri      = "/Offset",
         .method   = HTTP_POST,
@@ -528,14 +449,6 @@ int init_server(char *server_buf)
         .user_ctx = server_buf
     };
     httpd_register_uri_handler(server, &set_offset_uri);
-
-    httpd_uri_t set_loud_uri = {
-        .uri      = "/Loud",
-        .method   = HTTP_POST,
-        .handler  = set_loud_handler,
-        .user_ctx = server_buf
-    };
-    httpd_register_uri_handler(server, &set_loud_uri);
 
     return ESP_OK;
 }

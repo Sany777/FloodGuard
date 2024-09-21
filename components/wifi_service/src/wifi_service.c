@@ -12,7 +12,6 @@
 #include "esp_sntp.h"
 #include "sdkconfig.h"
 #include "esp_mac.h"
-#include "toolbox.h"
 #include "device_common.h"
 #include "setting_server.h"
 #include "device_macro.h"
@@ -45,20 +44,18 @@ static void sta_handler(void* arg, esp_event_base_t event_base, int32_t event_id
     static int retry_num;
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         retry_num = 0;
-        device_clear_state(BIT_IS_STA_CONNECTION);
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if(retry_num < 5){
             esp_wifi_connect();
             ++retry_num;
-            wifi_event_sta_disconnected_t *event_sta_disconnected = (wifi_event_sta_disconnected_t *) event_data;
-            if(event_sta_disconnected->reason == WIFI_REASON_NO_AP_FOUND
-                        || event_sta_disconnected->reason == WIFI_REASON_HANDSHAKE_TIMEOUT){
+        } else {
+            wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *) event_data;
+            if(event->reason == WIFI_REASON_NO_AP_FOUND
+                        || event->reason == WIFI_REASON_HANDSHAKE_TIMEOUT){
                 device_set_state(BIT_ERR_SSID_NOT_FOUND);
-            } else {
-                device_clear_state(BIT_ERR_SSID_NOT_FOUND);
             }
-        } 
+        }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         retry_num = 0;
         device_set_state(BIT_IS_STA_CONNECTION);
@@ -131,10 +128,12 @@ int connect_sta(const char *ssid, const char *pwd)
 #endif
 
     CHECK_AND_RET_ERR(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_sta_config));
+    device_clear_state(BIT_IS_STA_CONNECTION|BIT_ERR_SSID_NOT_FOUND);
     CHECK_AND_RET_ERR(esp_wifi_start());
-    vTaskDelay(1000/portTICK_PERIOD_MS);
+    vTaskDelay(500/portTICK_PERIOD_MS);
     unsigned bits = device_wait_bits(BIT_IS_STA_CONNECTION);
     if(bits&BIT_IS_STA_CONNECTION){
+        vTaskDelay(1000/portTICK_PERIOD_MS);
         return ESP_OK;
     }
     ESP_LOGE("", "err timeout sta");
@@ -144,7 +143,7 @@ int connect_sta(const char *ssid, const char *pwd)
 
 int start_ap()
 {
-    if (wifi_mode != WIFI_MODE_AP && wifi_mode != WIFI_MODE_NULL) {
+    if (wifi_mode == WIFI_MODE_STA) {
         wifi_stop(); 
     }
 
