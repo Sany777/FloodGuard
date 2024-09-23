@@ -185,7 +185,7 @@ void device_init()
 {
     device_event_gr = xEventGroupCreate();
     init_nvs();
-    device_gpio_init();
+    device_gpio_out_init();
     read_data();
     wifi_init();
 }

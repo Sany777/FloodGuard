@@ -10,8 +10,13 @@ extern "C" {
 #include "time.h"
 #include "adc_reader.h"
 
-enum BasicConst{
+enum DataConst{
     NO_DATA = -1,
+    ACT_MODE_1,
+    ACT_MODE_2,
+};
+
+enum BasicConst{
     WEEK_DAYS_NUM           = 7,
     MAX_STR_LEN             = 32,
     TOKEN_LEN               = 50,
@@ -19,6 +24,7 @@ enum BasicConst{
     DESCRIPTION_SIZE        = 20,
     FORECAST_LIST_SIZE      = 5,
     NET_BUF_LEN             = 5000,
+    MAX_DELAY_START_SEC     = 240
 };
 
 enum Bits{
@@ -36,19 +42,18 @@ enum Bits{
     BIT_START_SERVER            = (1<<11),
     BIT_SEND_MESSAGE            = (1<<12),
     BIT_IS_LOW_BAT              = (1<<13),
-    BIT_SERVER_BUT_PRESSED      = (1<<14),
+    BIT_ALARM_SOUND             = (1<<14),
     BIT_WAIT_BUT_INPUT          = (1<<15),
     BIT_WAIT_SIGNALE            = (1<<18),
     BIT_SERVER_RUN              = (1<<16),
     BIT_CHECK_BAT               = (1<<17),
     BIT_IS_TIME                 = (1<<18),
     BIT_IS_AP_CLIENT            = (1<<19),
-    BIT_BUT_START_PRESED        = (1<<20),
-    BIT_BUT_START_LONG_PRESED   = (1<<21),
-    BIT_BUT_RESET_PRESSED       = (1<<22),
-    BIT_BUT_RESET_LONG_PRESSED  = (1<<23),
+    BIT_SENSOR_DIS              = (1<<20),
+    BIT_CHANGE_SENSOR_STATE     = (1<<20),
+    
     STORED_FLAGS                = (BIT_GUARD_DIS|BIT_INFO_NOTIFACTION_EN|BIT_NOTIFICATION_DIS|BIT_LIMESCALE_PREVENTION),
-    BITS_DENIED_SLEEP           = (BIT_WAIT_BUT_INPUT|BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_WET_SENSOR),
+    BITS_DENIED_SLEEP           = (BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_SEND_MESSAGE),
 };
 
 typedef struct {
@@ -65,16 +70,24 @@ typedef struct {
 
 
 // --------------------------------------- GPIO
-void device_gpio_init(void);
-int device_get_button();
+typedef struct{
+    bool pressed;
+    int pin_num;
+    unsigned start_state_time;
+}inp_conf_t;
 
-#define PIN_IN_BUT_RESET           2
-#define PIN_IN_BUT_START_SERVER    3
+void inp_init(inp_conf_t * conf, int pin_num);
+int get_but_state(inp_conf_t * button, unsigned cur_time);
+void device_gpio_out_init(void);
+int get_inp_state(inp_conf_t * conf, unsigned cur_time, unsigned delay_time);
+
+#define PIN_BUT_RIGHT           2
+#define PIN_BUT_LEFT    3
 #define PIN_OUT_LED_ALARM          10
 #define PIN_OUT_LED_OK             6
 #define PIN_OUT_SIG                5 
-#define PIN_IN_ADC_ADJUSTMENT      7
-#define PIN_IN_ADC_VOLTAGE         11
+#define PIN_OUT_SERVO              7 
+#define PIN_OUT_POWER              7 
 #define PIN_IN_SENSOR              11
 
 // --------------------------------------- common
