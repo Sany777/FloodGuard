@@ -23,14 +23,12 @@
 
 enum TimeoutMS{
     TIMEOUT_SEC                 = 1000,
-    TIMEOUT_10_SEC              = 10*TIMEOUT_SEC,
-    TIMEOUT_UPDATE_SCREEN       = 19*TIMEOUT_SEC,
+    TIMEOUT_MOVING             = 10*TIMEOUT_SEC,
     TIMEOUT_MINUTE              = 60*TIMEOUT_SEC,
-    TIMEOUT_FOUR_MINUTE         = 4*TIMEOUT_MINUTE,
-    TIMEOUT_HOUR                = 60*TIMEOUT_MINUTE,
-    TIMEOUT_4_HOUR              = 4*TIMEOUT_HOUR,
-    DELAY_UPDATE_FORECAST       = 32*TIMEOUT_MINUTE,
+    TIMEOUT_24_HOUR             = 60*60*24*TIMEOUT_SEC,
+    TIMEOUT_SLEEP               = 60*60*5*TIMEOUT_SEC,
     LONG_PRESS_TIME             = TIMEOUT_SEC,
+    TIMEOUT_ALARM_SLEEP         = 5*TIMEOUT_SEC
 };
 
 enum TaskDelay{
@@ -38,12 +36,12 @@ enum TaskDelay{
     DELAY_MAIN_TASK = 100,
 };
 
-static int delay_update_forecast = 2*TIMEOUT_MINUTE;
 
+static void change_delay();
+static void end_moving_handler();
+static void alarm_handler();
 
-
-static void sig_end_but_inp_handler();
-
+static void set_tap(bool close);
 
 
 
@@ -52,30 +50,91 @@ static void main_task(void *pv)
     float volt_val = 0;
     unsigned bits;
     int pin_val = NO_DATA;
-    unsigned timeout = TIMEOUT_10_SEC;
-    long long counter, work_time = 0;
-    int volt_fail = 0;
+    long long sleep_time, cur_time;
+    int start_but_val, setting_but_val, sensor_val;
     set_offset(device_get_offset());
+    inp_conf_t start_but, setting_but, sensor_in;
+    inp_init(&start_but, PIN_BUT_RIGHT);
+    inp_init(&setting_but, PIN_BUT_LEFT);
+    inp_init(&sensor_in, PIN_IN_SENSOR);
+    bool is_alarm, state_alarm = false;
+    sleep_time = TIMEOUT_SLEEP;
 
     for(;;){
 
         device_start_timer();
-        counter = esp_timer_get_time();
 
-
-        while(1){
+        do{
             
             vTaskDelay(DELAY_MAIN_TASK/portTICK_PERIOD_MS);
 
+            cur_time = esp_timer_get_time();
+
+            start_but_val = get_but_state(&start_but, cur_time);
+            setting_but_val = get_but_state(&setting_but, cur_time);
+
             bits = device_get_state();
 
-            if(bits&BIT_BUT_START_PRESED){
-                create_periodic_task(sig_end_but_inp_handler, TIMEOUT_10_SEC, 1);
+            if(setting_but_val == ACT_MODE_1){
                 if(bits&BIT_SERVER_RUN){
                     device_clear_state(BIT_SERVER_RUN);
-                } else {
+                    start_single_signale(70);
+                }else{
                     device_set_state(BIT_START_SERVER);
+                    start_signale_series(35, 2);
                 }
+            }else if(setting_but_val == ACT_MODE_2){
+                start_signale_series(30, 5);
+                vTaskDelay(1000/portTICK_PERIOD_MS);
+                change_delay();
+            }else if(start_but_val == ACT_MODE_1){
+                start_single_signale(70);
+                if(bits&BIT_ALARM){
+                    if(bits&BIT_ALARM_SOUND){
+                        remove_task(alarm_handler);
+                        device_clear_state(BIT_ALARM_SOUND);
+                    } else {
+                        device_clear_state(BIT_ALARM);
+                    }
+                } 
+            } else if(start_but_val == ACT_MODE_2){
+                if(bits&BIT_ALARM){
+                    start_signale_series(30, 5);
+                    device_clear_state(BIT_GUARD_DIS|BIT_ALARM);
+                } else {
+                    start_signale_series(70, 1);
+                    device_set_state(BIT_GUARD_DIS|BIT_ALARM);
+                }
+            }
+
+            if(bits&BIT_GUARD_DIS){
+                gpio_set_level(PIN_OUT_LED_OK, 0);
+            } else {
+                gpio_set_level(PIN_OUT_LED_OK, 1);
+                sensor_val = get_inp_state(&sensor_in, cur_time, device_get_delay());
+                if(sensor_val != NO_DATA){
+                    device_set_state(BIT_WET_SENSOR);
+                    if(sensor_val == ACT_MODE_2 && !(bits&BIT_ALARM)){
+                       device_set_state(BIT_ALARM); 
+                    }
+                } else {
+                    device_clear_state(BIT_WET_SENSOR);
+                }
+            }
+
+            is_alarm = bits&BIT_ALARM;
+
+            if(state_alarm != is_alarm){
+                state_alarm = is_alarm;
+                if(is_alarm){
+                    device_set_state(BIT_ALARM_SOUND);
+                    create_periodic_task(alarm_handler, TIMEOUT_SEC, FOREVER);
+                    sleep_time = TIMEOUT_MOVING;
+                } else {
+                    sleep_time = TIMEOUT_SLEEP;
+                }
+                set_tap(is_alarm);
+                gpio_set_level(PIN_OUT_LED_ALARM, is_alarm);
             }
             
 
@@ -84,17 +143,13 @@ static void main_task(void *pv)
             }
 
 
-        }
+        }while(bits&BITS_DENIED_SLEEP);
 
-        esp_sleep_enable_timer_wakeup(delay_update_forecast * 1000);
+        esp_sleep_enable_timer_wakeup(sleep_time * 1000);
         esp_sleep_enable_gpio_wakeup();
         device_stop_timer();
         esp_light_sleep_start();
-        if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER){
-            timeout = 1;
-        } else {
-            timeout = TIMEOUT_10_SEC;
-        }
+
     }
 }
 
@@ -152,6 +207,7 @@ static void service_task(void *pv)
                     device_wait_bits(BIT_IS_TIME);
                     stop_sntp();
                 }
+
             }
             if(esp_res == ESP_OK){
 
@@ -166,16 +222,42 @@ static void service_task(void *pv)
 
 }
 
-
-
-
-
-
-
-
-static void sig_end_but_inp_handler()
+static void end_moving_handler()
 {
-    device_clear_state_isr(BIT_WAIT_BUT_INPUT);
+    gpio_set_level(PIN_OUT_POWER, 0);
+}
+
+static void set_tap(bool close)
+{
+    gpio_set_level(PIN_OUT_SERVO, close);
+    gpio_set_level(PIN_OUT_POWER, 1);
+    create_periodic_task(end_moving_handler, TIMEOUT_MOVING, 1);
+}
+
+static void alarm_handler()
+{
+    start_single_signale(100);
+}
+
+static void change_delay()
+{
+    unsigned work_time = 0;
+    gpio_set_level(PIN_OUT_LED_ALARM, 0);
+    gpio_set_level(PIN_OUT_LED_OK, 0);
+    int delay_sec = 1;
+    do{
+        vTaskDelay(DELAY_MAIN_TASK/portTICK_PERIOD_MS);
+        work_time += DELAY_MAIN_TASK;
+        if(work_time > TIMEOUT_SEC){
+            work_time = 0;
+            device_set_delay(delay_sec++);
+            gpio_set_level(PIN_OUT_LED_OK, 1);
+            start_single_signale(20);
+        } else {
+            gpio_set_level(PIN_OUT_LED_OK, 0);
+        }
+    }while(gpio_get_level(PIN_BUT_RIGHT) && delay_sec < MAX_DELAY_START_SEC);
+    device_commit_changes();
 }
 
 
