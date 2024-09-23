@@ -4,63 +4,55 @@
 #include "esp_sleep.h"
 #include "esp_timer.h"
 
-#define DEBOUNCE_TIME_MS 200
+enum LatencyMS{
+    BUT_DEBOUNCE_TIME  = 200,
+    BUT_LONG_PRESS_TIME = 1000,
+};
 
-static void IRAM_ATTR but_handler(void* arg) 
+
+
+int get_but_state(inp_conf_t * button, unsigned cur_time)
 {
-    static int last_pin = NO_DATA;
-    static volatile uint32_t last_interrupt_time = 0;
-    int cur_pin = (int) arg;
-    uint32_t current_time = esp_timer_get_time() / 1000;  
-    if(cur_pin == last_pin){
-        if (current_time - last_interrupt_time > DEBOUNCE_TIME_MS) {
-            last_interrupt_time = current_time; 
-            if(last_pin == PIN_IN_BUT_START_SERVER){
-                device_set_state_isr(BIT_BUT_START_PRESED);
-            } else {
-                device_set_state_isr(BIT_BUT_RESET_PRESSED);
+    return get_inp_state(button, cur_time, BUT_LONG_PRESS_TIME);
+}
+
+
+int get_inp_state(inp_conf_t * conf, unsigned cur_time, unsigned other_mode_time)
+{
+    int cur_state = NO_DATA;
+    const bool press = gpio_get_level((gpio_num_t)conf->pin_num);
+    const unsigned state_time = cur_time - conf->start_state_time;
+    if(press != conf->pressed || (press && state_time>other_mode_time)){
+        if(press){
+            if(state_time >= other_mode_time){
+                cur_state = ACT_MODE_2;
             }
-            last_pin = NO_DATA;
+        } else if(state_time>BUT_DEBOUNCE_TIME){
+            cur_state = state_time >= other_mode_time ? ACT_MODE_2 : ACT_MODE_1;
         }
-    } else if(last_pin == NO_DATA){
-        last_pin = cur_pin;
-        last_interrupt_time = current_time;
+        conf->pressed = press;
+        conf->start_state_time = cur_time; 
     }
+    return cur_state; 
 }
 
-static void IRAM_ATTR sensor_handler(void* arg) 
-{
-    device_set_state_isr(BIT_WET_SENSOR);
+void inp_init(inp_conf_t * conf, int pin_num)
+{   
+    conf->pressed = false;
+    conf->pin_num = pin_num;
+    conf->start_state_time = 0;
+    gpio_set_direction(pin_num, GPIO_MODE_INPUT);
+    gpio_set_level(pin_num, 0);
 }
 
-void device_gpio_init() 
+
+void device_gpio_out_init() 
 {
-    gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_INTR_NEGEDGE;  
-    io_conf.pin_bit_mask = (1ULL << PIN_IN_SENSOR);
-    io_conf.mode = GPIO_MODE_INPUT;           
-    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;  
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    gpio_config(&io_conf);
-
-    gpio_isr_handler_add(PIN_IN_SENSOR, sensor_handler, NULL);
-
-    gpio_config_t but_conf;
-    io_conf.intr_type = GPIO_INTR_ANYEDGE;  
-    io_conf.pin_bit_mask = (1ULL << PIN_IN_BUT_RESET) | (1ULL << PIN_IN_BUT_START_SERVER);
-    io_conf.mode = GPIO_MODE_INPUT;           
-    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;  
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    gpio_config(&but_conf);
-
-    gpio_isr_handler_add(PIN_IN_BUT_RESET, but_handler, (void*)PIN_IN_BUT_RESET);
-    gpio_isr_handler_add(PIN_IN_BUT_START_SERVER, but_handler, (void*)PIN_IN_BUT_START_SERVER);
-
     gpio_config_t out_conf = {
         .pin_bit_mask = (1ULL << PIN_OUT_LED_ALARM)|(1ULL << PIN_OUT_LED_OK)|(1<<PIN_OUT_SIG),
-        .mode = GPIO_MODE_OUTPUT,
+        .mode = GPIO_MODE_INPUT_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLUP_ENABLE
+        .pull_down_en = GPIO_PULLDOWN_ENABLE
     };
     gpio_config(&out_conf);
 }
