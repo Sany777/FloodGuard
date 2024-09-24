@@ -9,8 +9,10 @@
 #include "portmacro.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "string.h"
+#include "stdio.h"
 
-#include "telegram_client.h"
+#include "device_http_client.h"
 #include "sound_generator.h"
 #include "periodic_task.h"
 #include "device_common.h"
@@ -23,7 +25,7 @@
 
 enum TimeoutMS{
     TIMEOUT_SEC                 = 1000,
-    TIMEOUT_MOVING             = 10*TIMEOUT_SEC,
+    TIMEOUT_MOVING              = 10*TIMEOUT_SEC,
     TIMEOUT_MINUTE              = 60*TIMEOUT_SEC,
     TIMEOUT_24_HOUR             = 60*60*24*TIMEOUT_SEC,
     TIMEOUT_SLEEP               = 60*60*5*TIMEOUT_SEC,
@@ -40,29 +42,35 @@ enum TaskDelay{
 static void change_delay();
 static void end_moving_handler();
 static void alarm_handler();
+static void update_time_handler();
+
+QueueHandle_t telegram_queue;
 
 static void set_tap(bool close);
-
+long long sleep_time = TIMEOUT_SLEEP;
 
 
 static void main_task(void *pv)
 {
-    float volt_val = 0;
     unsigned bits;
-    int pin_val = NO_DATA;
-    long long sleep_time, cur_time;
+    long long cur_time;
     int start_but_val, setting_but_val, sensor_val;
     set_offset(device_get_offset());
     inp_conf_t start_but, setting_but, sensor_in;
     inp_init(&start_but, PIN_BUT_RIGHT);
     inp_init(&setting_but, PIN_BUT_LEFT);
     inp_init(&sensor_in, PIN_IN_SENSOR);
-    bool is_alarm, state_alarm = false;
-    sleep_time = TIMEOUT_SLEEP;
-
+    bool is_alarm, state_alarm = false, send = true;
+    device_set_state(BIT_UPDATE_TIME);
+    create_periodic_task(update_time_handler, TIMEOUT_24_HOUR, FOREVER);
+    vTaskDelay(1000/portTICK_PERIOD_MS);
+    struct tm *tinfo = get_cur_time_tm();
+    int day_send = 0;
     for(;;){
 
         device_start_timer();
+
+        bits = device_get_state();
 
         do{
             
@@ -73,7 +81,6 @@ static void main_task(void *pv)
             start_but_val = get_but_state(&start_but, cur_time);
             setting_but_val = get_but_state(&setting_but, cur_time);
 
-            bits = device_get_state();
 
             if(setting_but_val == ACT_MODE_1){
                 if(bits&BIT_SERVER_RUN){
@@ -128,27 +135,43 @@ static void main_task(void *pv)
                 state_alarm = is_alarm;
                 if(is_alarm){
                     device_set_state(BIT_ALARM_SOUND);
-                    create_periodic_task(alarm_handler, TIMEOUT_SEC, FOREVER);
-                    sleep_time = TIMEOUT_MOVING;
+                    create_periodic_task(alarm_handler, 3*TIMEOUT_SEC, FOREVER);
+                    sleep_time = 5*TIMEOUT_SEC;
+                    send = true;
                 } else {
                     sleep_time = TIMEOUT_SLEEP;
                 }
                 set_tap(is_alarm);
                 gpio_set_level(PIN_OUT_LED_ALARM, is_alarm);
             }
-            
 
-            if(bits&BIT_CHECK_BAT){
-                
+            if(send){
+                create_telegram_message(bits);
+                send = false;
+                day_send = tinfo->tm_wday;
             }
 
+        }while(bits = device_get_state(), bits&BITS_DENIED_SLEEP);
 
-        }while(bits&BITS_DENIED_SLEEP);
+        if(bits&BIT_ERR_TELEGRAM_SEND){
+            if(! is_alarm && sleep_time < TIMEOUT_MINUTE*30){
+                sleep_time *= 2;
+            }
+        }
 
         esp_sleep_enable_timer_wakeup(sleep_time * 1000);
         esp_sleep_enable_gpio_wakeup();
         device_stop_timer();
         esp_light_sleep_start();
+        if(day_send != tinfo->tm_wday){
+            if( (is_valid_bat_conf() && get_voltage_perc(device_get_bat_conf()) < 20) 
+                || (bits&BIT_IS_TIME && bits&BIT_INFO_NOTIFACTION_EN && tinfo->tm_hour > 8) ){
+                send = true; 
+            }
+        }
+        if(bits&BIT_ERR_TELEGRAM_SEND){
+            device_set_state(BIT_SEND_MESSAGE);
+        }
 
     }
 }
@@ -159,12 +182,14 @@ static void service_task(void *pv)
 {
     uint32_t bits;
     bool open_sesion;
+    telegram_queue = xQueueCreate(5, sizeof(char*));
+    char *message;
     vTaskDelay(100/portTICK_PERIOD_MS);
     int esp_res, wait_client_timeout;
     bool fail_init_sntp = false;
-    struct tm * tinfo;
+
     for(;;){
-        bits = device_wait_bits_untile(BIT_START_SERVER|BIT_SEND_MESSAGE, 
+        bits = device_wait_bits_untile(BIT_START_SERVER|BIT_SEND_MESSAGE|BIT_UPDATE_TIME, 
                             portMAX_DELAY);
         if(bits & BIT_START_SERVER){
             if(start_ap() == ESP_OK ){
@@ -198,25 +223,35 @@ static void service_task(void *pv)
             device_clear_state(BIT_START_SERVER);
         }
 
-        if(bits&BIT_SEND_MESSAGE){
+        if(bits&BIT_SEND_MESSAGE || bits&BIT_UPDATE_TIME){
             esp_res = connect_sta(device_get_ssid(),device_get_pwd());
             if(esp_res == ESP_OK){
                 device_clear_state(BIT_ERR_STA_CONF);
-                if(! (bits&BIT_IS_TIME)){
-                    init_sntp();
-                    device_wait_bits(BIT_IS_TIME);
-                    stop_sntp();
+                if(bits&BIT_UPDATE_TIME){
+                    device_clear_state(BIT_UPDATE_TIME|BIT_IS_TIME);  
+                    esp_res = device_update_time();
+                    if(esp_res == ESP_OK){
+                        device_set_state(BIT_IS_TIME);
+                    }
                 }
-
+                if(esp_res == ESP_OK){
+                    while(message != NULL || xQueueReceive(telegram_queue, &message, 0) == pdTRUE){
+                        esp_res = send_telegram_message(device_get_token(), device_get_chat_id(), message);
+                        if(esp_res != ESP_OK)break;
+                        free(message);
+                        message = NULL;
+                    }
+                }
             }
-            if(esp_res == ESP_OK){
-
-            } else {
-
+            if(bits&BIT_SEND_MESSAGE){
+                if(esp_res != ESP_OK){
+                    device_set_state(BIT_ERR_TELEGRAM_SEND);
+                } else if(bits&BIT_ERR_TELEGRAM_SEND){
+                    device_clear_state(BIT_ERR_TELEGRAM_SEND);
+                }
             }
-
             wifi_stop();
-            device_clear_state(BIT_SEND_MESSAGE);
+            device_clear_state(BIT_SEND_MESSAGE|BIT_WAIT_SANDING);
         }
     }
 
@@ -237,6 +272,11 @@ static void set_tap(bool close)
 static void alarm_handler()
 {
     start_single_signale(100);
+}
+
+static void update_time_handler()
+{
+    device_set_state_isr(BIT_UPDATE_TIME);
 }
 
 static void change_delay()

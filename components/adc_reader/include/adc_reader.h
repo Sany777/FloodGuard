@@ -15,8 +15,8 @@ typedef struct{
 
 
 void adc_init(void);
-unsigned get_voltage_mv(bat_conf_t * bat_conf);
-unsigned get_voltage_perc(bat_conf_t * bat_conf);
+int get_voltage_mv(bat_conf_t * bat_conf);
+int get_voltage_perc(bat_conf_t * bat_conf);
 void set_coef_val(bat_conf_t * bat_conf, unsigned real_volt_mv);
 
 

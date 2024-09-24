@@ -33,13 +33,16 @@ int device_get_offset()
 
 int device_get_delay()
 {
-    return main_data.delay_to_alarm_sec;
+    return main_data.delay_to_alarm_ms;
 }
-void device_set_offset(int offset)
+
+int device_set_offset(int offset)
 {
+    if(offset < -23 || offset > 23)return ESP_FAIL;
     set_offset(offset);
     main_data.offset = offset;
     changed_main_data = true;
+    return ESP_OK;
 }
 
 void device_set_pwd(const char *str)
@@ -66,24 +69,26 @@ void device_set_placename(const char *str)
     changed_main_data = true;
 }
 
-void device_set_chat_id(const char *str)
+int device_set_chat_id(const char *str)
 {
-    const int len = strnlen(str, MAX_STR_LEN);
-    memcpy(main_data.chat_id, str, len);
-    main_data.chat_id[len] = 0;
+    if(strnlen(str, CHAT_ID_LEN) != CHAT_ID_LEN) return ESP_FAIL;
+    memcpy(main_data.chat_id, str, CHAT_ID_LEN);
+    main_data.chat_id[CHAT_ID_LEN] = 0;
     changed_main_data = true;
+    return ESP_OK;
 }
 
-void device_set_token(const char *str)
+
+int device_set_token(const char *str)
 {
-    if(strnlen(str, TOKEN_LEN+1) == TOKEN_LEN){
-        memcpy(main_data.token, str, TOKEN_LEN);
-        main_data.token[TOKEN_LEN] = 0;
-        changed_main_data = true;
-    }
+    if(strnlen(str, TOKEN_LEN+1) != TOKEN_LEN) return ESP_FAIL;
+    memcpy(main_data.token, str, TOKEN_LEN);
+    main_data.token[TOKEN_LEN] = 0;
+    changed_main_data = true;
+    return ESP_OK;
 }
 
-int device_commit_changes()
+bool device_commit_changes()
 {
     if(changed_main_data){
         CHECK_AND_RET_ERR(write_flash(MAIN_DATA_NAME, (uint8_t *)&main_data, sizeof(main_data)));
@@ -142,6 +147,11 @@ const char *  device_get_chat_id()
     return main_data.chat_id;
 }
 
+bool is_valid_bat_conf()
+{
+    return main_data.bat_conf.max_mVolt != 0 && main_data.bat_conf.min_mVolt != 0 && main_data.bat_conf.volt_koef != 0;
+}
+
 bat_conf_t * device_get_bat_conf()
 {
     return &main_data.bat_conf;
@@ -159,10 +169,10 @@ int device_set_bat_conf(unsigned min_volt, unsigned max_volt, unsigned real_volt
     return ESP_FAIL;
 }
 
-int device_set_delay(unsigned delay_to_alarm_sec)
+int device_set_delay(unsigned delay_to_alarm_ms)
 {
-    if(delay_to_alarm_sec < 180){
-        main_data.delay_to_alarm_sec = delay_to_alarm_sec;
+    if(delay_to_alarm_ms <= MAX_ALARM_DELAY_MS){
+        main_data.delay_to_alarm_ms = delay_to_alarm_ms;
         return ESP_OK;
     }
     return ESP_FAIL;
@@ -178,6 +188,9 @@ static int read_data()
 {
     CHECK_AND_RET_ERR(read_flash(MAIN_DATA_NAME, (unsigned char *)&main_data, sizeof(main_data)));
     device_set_state(main_data.config&STORED_FLAGS);
+    if(main_data.delay_to_alarm_ms == 0){
+        main_data.delay_to_alarm_ms = 15*1000;
+    }
     return ESP_OK;
 }
 

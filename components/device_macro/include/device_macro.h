@@ -41,9 +41,10 @@ extern "C" {
 #define flag_get(flags, index)  \
     ((flags)&(1<<(index)))
 
-// #define MIN(a,b)    
-//     ((a)>(b)?(b):(a))
-
+#ifndef MIN
+    #define MIN(a,b) \
+        ((a)>(b)?(b):(a))
+#endif
 
 
 #ifdef __cplusplus

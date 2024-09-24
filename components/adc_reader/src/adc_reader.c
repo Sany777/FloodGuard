@@ -18,9 +18,10 @@ void adc_init(void)
 }
 
 // max adc_value = 4095 for 12 bit
-unsigned get_voltage_mv(bat_conf_t * bat_conf)
+int get_voltage_mv(bat_conf_t * bat_conf)
 {
     int adc_value = 0;
+    if(bat_conf->volt_koef == 0) return -1;
     adc2_get_raw(ADC_CHANNEL, ADC_WIDTH_BIT_12, &adc_value);
     return (adc_value * bat_conf->volt_koef) / 1000 ;
 }
@@ -33,9 +34,10 @@ void set_coef_val(bat_conf_t * bat_conf, unsigned real_volt_mv)
     bat_conf->volt_koef = (real_volt_mv * 1000) / val ;
 }
 
-unsigned get_voltage_perc(bat_conf_t * bat_conf)
+int get_voltage_perc(bat_conf_t * bat_conf)
 {
     unsigned volt = 0;
+    if(bat_conf->max_mVolt == 0 || bat_conf->min_mVolt == 0) return 0;
     while(volt = get_voltage_mv(bat_conf), volt < 1000)vTaskDelay(10);
     if (volt >= bat_conf->max_mVolt) return 100;
     if (volt <= bat_conf->min_mVolt) return 0;

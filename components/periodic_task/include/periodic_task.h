@@ -13,8 +13,6 @@ extern "C" {
 
 typedef void(*periodic_func_t)();
 
-
-
 void remove_task_isr(periodic_func_t func);
 int create_periodic_task_isr(periodic_func_t func,
                             uint64_t delay_ms, 

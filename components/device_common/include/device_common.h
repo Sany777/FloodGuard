@@ -19,12 +19,14 @@ enum DataConst{
 enum BasicConst{
     WEEK_DAYS_NUM           = 7,
     MAX_STR_LEN             = 32,
-    TOKEN_LEN               = 50,
-    FORBIDDED_NOTIF_HOUR    = 6*60,
+    TOKEN_LEN               = 46,
+    CHAT_ID_LEN             = 9,
+    MAX_ALARM_DELAY_MS      = 60*1000,
     DESCRIPTION_SIZE        = 20,
     FORECAST_LIST_SIZE      = 5,
     NET_BUF_LEN             = 5000,
-    MAX_DELAY_START_SEC     = 240
+    MAX_DELAY_START_SEC     = 240,
+    
 };
 
 enum Bits{
@@ -35,7 +37,7 @@ enum Bits{
     BIT_WET_SENSOR              = (1<<4),
     BIT_ALARM                   = (1<<5), 
     BIT_ERR_STA_CONF            = (1<<6),       
-    BIT_ERR_TELEGRAM_CONF       = (1<<7), 
+    BIT_ERR_TELEGRAM_SEND       = (1<<7), 
     BIT_ERR_SSID_NOT_FOUND      = (1<<8), 
     BIT_IS_AP_CONNECTION        = (1<<9),
     BIT_IS_STA_CONNECTION       = (1<<10),
@@ -46,14 +48,14 @@ enum Bits{
     BIT_WAIT_BUT_INPUT          = (1<<15),
     BIT_WAIT_SIGNALE            = (1<<18),
     BIT_SERVER_RUN              = (1<<16),
-    BIT_CHECK_BAT               = (1<<17),
+    BIT_UPDATE_TIME             = (1<<17),
     BIT_IS_TIME                 = (1<<18),
     BIT_IS_AP_CLIENT            = (1<<19),
-    BIT_SENSOR_DIS              = (1<<20),
+    BIT_WAIT_SANDING            = (1<<20),
     BIT_CHANGE_SENSOR_STATE     = (1<<20),
     
     STORED_FLAGS                = (BIT_GUARD_DIS|BIT_INFO_NOTIFACTION_EN|BIT_NOTIFICATION_DIS|BIT_LIMESCALE_PREVENTION),
-    BITS_DENIED_SLEEP           = (BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_SEND_MESSAGE),
+    BITS_DENIED_SLEEP           = (BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_SEND_MESSAGE|BIT_WAIT_SANDING),
 };
 
 typedef struct {
@@ -64,7 +66,7 @@ typedef struct {
     char token[TOKEN_LEN+1];
     unsigned config;
     int offset;
-    unsigned delay_to_alarm_sec;
+    unsigned delay_to_alarm_ms;
     bat_conf_t bat_conf;
 } settings_data_t;
 
@@ -81,23 +83,23 @@ int get_but_state(inp_conf_t * button, unsigned cur_time);
 void device_gpio_out_init(void);
 int get_inp_state(inp_conf_t * conf, unsigned cur_time, unsigned delay_time);
 
-#define PIN_BUT_RIGHT           2
-#define PIN_BUT_LEFT    3
-#define PIN_OUT_LED_ALARM          10
-#define PIN_OUT_LED_OK             6
-#define PIN_OUT_SIG                5 
-#define PIN_OUT_SERVO              7 
-#define PIN_OUT_POWER              7 
-#define PIN_IN_SENSOR              11
+#define PIN_BUT_RIGHT              19
+#define PIN_BUT_LEFT               18      
+#define PIN_OUT_LED_ALARM          5
+#define PIN_OUT_LED_OK             16
+#define PIN_OUT_SIG                4
+#define PIN_OUT_SERVO              2
+#define PIN_OUT_POWER              17
+#define PIN_IN_SENSOR              23
 
 // --------------------------------------- common
-void device_set_offset(int time_offset);
+int device_set_offset(int time_offset);
 void device_set_pwd(const char *str);
 void device_set_ssid(const char *str);
 void device_set_placename(const char *str);
-void device_set_chat_id(const char *str);
-void device_set_token(const char *str);
-int device_commit_changes();
+int device_set_chat_id(const char *str);
+int device_set_token(const char *str);
+bool device_commit_changes();
 unsigned device_get_state();
 unsigned  device_set_state(unsigned bits);
 unsigned  device_clear_state(unsigned bits);
@@ -108,14 +110,14 @@ const char  * device_get_token();
 const char  * device_get_chat_id();
 bat_conf_t * device_get_bat_conf();
 int device_set_bat_conf(unsigned min_volt, unsigned max_volt, unsigned real_volt);
-int device_set_delay(unsigned delay_to_alarm_sec);
+int device_set_delay(unsigned delay_to_alarm_ms);
 const char * device_get_placename();
 void device_init();
 void device_set_state_isr(unsigned bits);
 void  device_clear_state_isr(unsigned bits);
 int device_get_offset();
 int device_get_delay();
-
+bool is_valid_bat_conf();
 
 #define device_wait_bits(bits) \
     device_wait_bits_untile(bits, 12000/portTICK_PERIOD_MS)

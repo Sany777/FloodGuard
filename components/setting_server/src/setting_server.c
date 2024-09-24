@@ -147,7 +147,7 @@ static esp_err_t set_wifi_conf_handler(httpd_req_t *req)
 
 
 
-static esp_err_t set_baterry_conf_handler(httpd_req_t *req)
+static esp_err_t set_battery_conf_handler(httpd_req_t *req)
 {
     cJSON *root, *min_mv_j, *max_mv_j, *real_volt_j;
     root = get_json_data(req);
@@ -210,7 +210,7 @@ static esp_err_t get_info_handler(httpd_req_t *req)
     bat_conf_t *bat_conf = device_get_bat_conf();
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
-    snprintf(server_buf, 200, "chip: %s\nvoltage: %u mV\nbaterry: %u%%\n%s",
+    snprintf(server_buf, 200, "chip: %s\nvoltage: %u mV\nbattery: %u%%\n%s",
                 get_chip(chip_info.model), 
                 get_voltage_mv(bat_conf),
                 get_voltage_perc(bat_conf),
@@ -251,8 +251,6 @@ static esp_err_t get_settings_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-	
-
 static esp_err_t set_flag_handler(httpd_req_t *req)
 {
     int flags;
@@ -276,8 +274,7 @@ static esp_err_t set_delay_handler(httpd_req_t *req)
 
     if(cJSON_IsNumber(delay_to_alarm_j)){
         delay_to_alarm = delay_to_alarm_j->valueint;
-        if(device_set_delay(delay_to_alarm)){
-            device_set_delay(delay_to_alarm);
+        if(device_set_delay(delay_to_alarm*1000) == ESP_OK){
             httpd_resp_sendstr(req, MES_SUCCESSFUL);
             cJSON_Delete(root);
             return ESP_OK;
@@ -302,8 +299,7 @@ static esp_err_t set_offset_handler(httpd_req_t *req)
     
     if(cJSON_IsNumber(offset_j)){
         offset = offset_j->valueint;
-        if(offset < 24 && offset > -24){
-            device_set_offset(offset);
+        if(device_set_offset(offset) == ESP_OK){
             httpd_resp_sendstr(req, MES_SUCCESSFUL);
             cJSON_Delete(root);
             return ESP_OK;
@@ -427,13 +423,13 @@ int init_server(char *server_buf)
     };
     httpd_register_uri_handler(server, &set_delay_uri);
 
-    httpd_uri_t set_baterry_uri = {
+    httpd_uri_t set_battery_uri = {
         .uri      = "/Battery settings",
         .method   = HTTP_POST,
-        .handler  = set_baterry_conf_handler,
+        .handler  = set_battery_conf_handler,
         .user_ctx = server_buf
     };
-    httpd_register_uri_handler(server, &set_baterry_uri);
+    httpd_register_uri_handler(server, &set_battery_uri);
 
         httpd_uri_t set_telegram_uri = {
         .uri      = "/Telegram",
