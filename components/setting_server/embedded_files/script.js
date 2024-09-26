@@ -137,15 +137,18 @@ function sendData(formName)
             flags |= 1<<fi;
           }
           fi++;
+        } else if(child.type == 'number'){
+          js[child.name] = +child.value;
         } else {
           js[child.name] = child.value;
         }
       }
     }
+    const  path = formName.split(" ")[0];
     if(fi){
-      sendDataForm(formName, flags);
+      sendDataForm(path, flags);
     } else {
-      sendDataForm(formName, JSON.stringify(js));
+      sendDataForm(path, JSON.stringify(js));
     }
   }
 }

@@ -231,7 +231,7 @@ static esp_err_t get_settings_handler(httpd_req_t *req)
         cJSON_AddStringToObject(root, "Token", device_get_token());
         cJSON_AddStringToObject(root, "Name ", device_get_placename());
         cJSON_AddStringToObject(root, "ChatID", device_get_chat_id());
-        cJSON_AddNumberToObject(root, "Sec", device_get_delay());
+        cJSON_AddNumberToObject(root, "Sec", device_get_delay() / 1000);
         cJSON_AddNumberToObject(root, "Offset", device_get_offset());
         cJSON_AddNumberToObject(root, "Status", device_get_state());
         cJSON_AddNumberToObject(root, "Real voltage, mV", get_voltage_mv(bat_conf));
@@ -275,8 +275,8 @@ static esp_err_t set_delay_handler(httpd_req_t *req)
     if(cJSON_IsNumber(delay_to_alarm_j)){
         delay_to_alarm = delay_to_alarm_j->valueint;
         if(device_set_delay(delay_to_alarm*1000) == ESP_OK){
-            httpd_resp_sendstr(req, MES_SUCCESSFUL);
             cJSON_Delete(root);
+            httpd_resp_sendstr(req, MES_SUCCESSFUL);
             return ESP_OK;
         }
     }
@@ -375,13 +375,6 @@ int init_server(char *server_buf)
     };
     httpd_register_uri_handler(server, &wifi_uri);
 
-    httpd_uri_t api_uri = {
-        .uri      = "/Telegram",
-        .method   = HTTP_POST,
-        .handler  = set_telegram_data_handler,
-        .user_ctx = server_buf
-    };
-    httpd_register_uri_handler(server, &api_uri);
 
      httpd_uri_t index_uri = {
         .uri      = "/index.html",
@@ -407,16 +400,8 @@ int init_server(char *server_buf)
     };
     httpd_register_uri_handler(server, &get_script);
 
-     httpd_uri_t redir_uri = {
-        .uri      = "/*",
-        .method   = HTTP_GET,
-        .handler  = index_redirect_handler,
-        .user_ctx = server_buf
-    };
-    httpd_register_uri_handler(server, &redir_uri);
-
     httpd_uri_t set_delay_uri = {
-        .uri      = "/Delay start",
+        .uri      = "/Delay",
         .method   = HTTP_POST,
         .handler  = set_delay_handler,
         .user_ctx = server_buf
@@ -424,7 +409,7 @@ int init_server(char *server_buf)
     httpd_register_uri_handler(server, &set_delay_uri);
 
     httpd_uri_t set_battery_uri = {
-        .uri      = "/Battery settings",
+        .uri      = "/Battery",
         .method   = HTTP_POST,
         .handler  = set_battery_conf_handler,
         .user_ctx = server_buf
@@ -439,12 +424,20 @@ int init_server(char *server_buf)
     };
     httpd_register_uri_handler(server, &set_telegram_uri);
     httpd_uri_t set_offset_uri = {
-        .uri      = "/Offset",
+        .uri      = "/Time",
         .method   = HTTP_POST,
         .handler  = set_offset_handler,
         .user_ctx = server_buf
     };
     httpd_register_uri_handler(server, &set_offset_uri);
+
+    httpd_uri_t redir_uri = {
+        .uri      = "/*",
+        .method   = HTTP_GET,
+        .handler  = index_redirect_handler,
+        .user_ctx = server_buf
+    };
+    httpd_register_uri_handler(server, &redir_uri);
 
     return ESP_OK;
 }
