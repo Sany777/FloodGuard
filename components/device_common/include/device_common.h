@@ -12,6 +12,7 @@ extern "C" {
 
 enum DataConst{
     NO_DATA = -1,
+    ACT_MODE_0,
     ACT_MODE_1,
     ACT_MODE_2,
 };
@@ -21,7 +22,7 @@ enum BasicConst{
     MAX_STR_LEN             = 32,
     TOKEN_LEN               = 46,
     CHAT_ID_LEN             = 9,
-    MAX_ALARM_DELAY_MS      = 60*1000,
+    MAX_ALARM_DELAY_MS      = 120*1000,
     DESCRIPTION_SIZE        = 20,
     FORECAST_LIST_SIZE      = 5,
     NET_BUF_LEN             = 5000,
@@ -51,11 +52,11 @@ enum Bits{
     BIT_UPDATE_TIME             = (1<<17),
     BIT_IS_TIME                 = (1<<18),
     BIT_IS_AP_CLIENT            = (1<<19),
-    BIT_WAIT_SANDING            = (1<<20),
-    BIT_CHANGE_SENSOR_STATE     = (1<<20),
+    BIT_WAIT_SENDING            = (1<<20),
+    // BIT_CHANGE_SENSOR_STATE     = (1<<21),
     
     STORED_FLAGS                = (BIT_GUARD_DIS|BIT_INFO_NOTIFACTION_EN|BIT_NOTIFICATION_DIS|BIT_LIMESCALE_PREVENTION),
-    BITS_DENIED_SLEEP           = (BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_SEND_MESSAGE|BIT_WAIT_SANDING),
+    BITS_DENIED_SLEEP           = (BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_SEND_MESSAGE|BIT_WAIT_SENDING),
 };
 
 typedef struct {
@@ -73,24 +74,26 @@ typedef struct {
 
 // --------------------------------------- GPIO
 typedef struct{
-    bool pressed;
+    bool active;
+    bool active_level;
     int pin_num;
     unsigned start_state_time;
+    unsigned mode_2_latency;
 }inp_conf_t;
 
-void inp_init(inp_conf_t * conf, int pin_num);
-int get_but_state(inp_conf_t * button, unsigned cur_time);
+int get_inp_state(inp_conf_t * conf, unsigned cur_time, unsigned mode_2_latency);
 void device_gpio_out_init(void);
-int get_inp_state(inp_conf_t * conf, unsigned cur_time, unsigned delay_time);
+void inp_init(inp_conf_t * conf, int pin_num, bool active_level);
 
-#define PIN_BUT_RIGHT              19
-#define PIN_BUT_LEFT               18      
-#define PIN_OUT_LED_ALARM          5
-#define PIN_OUT_LED_OK             16
-#define PIN_OUT_SIG                4
-#define PIN_OUT_SERVO              2
-#define PIN_OUT_POWER              17
-#define PIN_IN_SENSOR              23
+#define PIN_BUT_RIGHT              5
+#define PIN_BUT_LEFT               16     
+#define PIN_IN_SENSOR              17
+
+#define PIN_OUT_LED_ALARM          32
+#define PIN_OUT_LED_OK             33
+#define PIN_OUT_SIG                12
+#define PIN_OUT_SERVO              14
+#define PIN_OUT_POWER              27
 
 // --------------------------------------- common
 int device_set_offset(int time_offset);

@@ -21,7 +21,7 @@ static settings_data_t main_data = {0};
 char network_buf[NET_BUF_LEN];
 
 static bool changed_main_data;
-static EventGroupHandle_t device_event_gr;
+static EventGroupHandle_t device_event_group;
 static const char *MAIN_DATA_NAME = "main_data";
 
 static int read_data();
@@ -100,7 +100,7 @@ bool device_commit_changes()
 
 unsigned device_get_state()
 {
-    return xEventGroupGetBits(device_event_gr);
+    return xEventGroupGetBits(device_event_group);
 } 
 
 unsigned  device_set_state(unsigned bits)
@@ -109,7 +109,7 @@ unsigned  device_set_state(unsigned bits)
         main_data.config |= bits;
         changed_main_data = true;
     }
-    return xEventGroupSetBits(device_event_gr, (EventBits_t) (bits));
+    return xEventGroupSetBits(device_event_group, (EventBits_t) (bits));
 }
 
 unsigned  device_clear_state(unsigned bits)
@@ -118,12 +118,12 @@ unsigned  device_clear_state(unsigned bits)
         main_data.config &= ~bits;
         changed_main_data = true;
     }
-    return xEventGroupClearBits(device_event_gr, (EventBits_t) (bits));
+    return xEventGroupClearBits(device_event_group, (EventBits_t) (bits));
 }
 
 unsigned device_wait_bits_untile(unsigned bits, unsigned time_ticks)
 {
-    return xEventGroupWaitBits(device_event_gr,
+    return xEventGroupWaitBits(device_event_group,
                                 (EventBits_t) (bits),
                                 pdFALSE,
                                 pdFALSE,
@@ -149,7 +149,9 @@ const char *  device_get_chat_id()
 
 bool is_valid_bat_conf()
 {
-    return main_data.bat_conf.max_mVolt != 0 && main_data.bat_conf.min_mVolt != 0 && main_data.bat_conf.volt_koef != 0;
+    return main_data.bat_conf.max_mVolt != 0 
+            && main_data.bat_conf.min_mVolt != 0 
+            && main_data.bat_conf.volt_koef != 0;
 }
 
 bat_conf_t * device_get_bat_conf()
@@ -196,7 +198,7 @@ static int read_data()
 
 void device_init()
 {
-    device_event_gr = xEventGroupCreate();
+    device_event_group = xEventGroupCreate();
     init_nvs();
     device_gpio_out_init();
     read_data();
@@ -207,11 +209,11 @@ void device_init()
 void device_set_state_isr(unsigned bits)
 {
     BaseType_t pxHigherPriorityTaskWoken;
-    xEventGroupSetBitsFromISR(device_event_gr, (EventBits_t)bits, &pxHigherPriorityTaskWoken);
+    xEventGroupSetBitsFromISR(device_event_group, (EventBits_t)bits, &pxHigherPriorityTaskWoken);
     portYIELD_FROM_ISR( pxHigherPriorityTaskWoken );
 }
 
 void  device_clear_state_isr(unsigned bits)
 {
-    xEventGroupClearBitsFromISR(device_event_gr, (EventBits_t)bits);
+    xEventGroupClearBitsFromISR(device_event_group, (EventBits_t)bits);
 }

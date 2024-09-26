@@ -37,8 +37,13 @@ void set_coef_val(bat_conf_t * bat_conf, unsigned real_volt_mv)
 int get_voltage_perc(bat_conf_t * bat_conf)
 {
     unsigned volt = 0;
+    int timeout = 0;
     if(bat_conf->max_mVolt == 0 || bat_conf->min_mVolt == 0) return 0;
-    while(volt = get_voltage_mv(bat_conf), volt < 1000)vTaskDelay(10);
+    while(volt = get_voltage_mv(bat_conf), volt < 1000){
+        vTaskDelay(10);  
+        if(timeout > 5000) return 0;
+        timeout += 10;
+    }
     if (volt >= bat_conf->max_mVolt) return 100;
     if (volt <= bat_conf->min_mVolt) return 0;
     return ((get_voltage_mv(bat_conf) - bat_conf->min_mVolt)*100) / (bat_conf->max_mVolt - bat_conf->min_mVolt);

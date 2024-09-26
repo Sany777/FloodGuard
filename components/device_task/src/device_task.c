@@ -30,12 +30,20 @@ enum TimeoutMS{
     TIMEOUT_24_HOUR             = 60*60*24*TIMEOUT_SEC,
     TIMEOUT_SLEEP               = 60*60*5*TIMEOUT_SEC,
     LONG_PRESS_TIME             = TIMEOUT_SEC,
-    TIMEOUT_ALARM_SLEEP         = 5*TIMEOUT_SEC
+    TIMEOUT_ALARM_SLEEP         = 5*TIMEOUT_SEC,
+    BUT_LONG_PRESS_LATENCY      = 2*TIMEOUT_SEC,
 };
 
 enum TaskDelay{
     DELAY_SERV      = 100,
     DELAY_MAIN_TASK = 100,
+};
+
+enum{
+    SENSOR_WET_STATE        = ACT_MODE_0,
+    SENSOR_ALARM_STATE      = ACT_MODE_2,
+    BUT_PRESS_STATE         = ACT_MODE_1,
+    BUT_LONG_PRESS_STATE    = ACT_MODE_2
 };
 
 
@@ -49,40 +57,41 @@ QueueHandle_t telegram_queue;
 static void set_tap(bool close);
 long long sleep_time = TIMEOUT_SLEEP;
 
+void blink_alarm_handle()
+{
+    gpio_set_level(PIN_OUT_LED_ALARM, !gpio_get_level(PIN_OUT_LED_ALARM));
+    start_single_signale(10);
+}
 
 static void main_task(void *pv)
 {
     unsigned bits;
     long long cur_time;
     int start_but_val, setting_but_val, sensor_val;
+    unsigned work_time, start_run, timeout = 5*TIMEOUT_SEC;
     set_offset(device_get_offset());
     inp_conf_t start_but, setting_but, sensor_in;
-    inp_init(&start_but, PIN_BUT_RIGHT);
-    inp_init(&setting_but, PIN_BUT_LEFT);
-    inp_init(&sensor_in, PIN_IN_SENSOR);
-    bool is_alarm, state_alarm = false, send = true;
+    inp_init(&start_but, PIN_BUT_RIGHT, 0);
+    inp_init(&setting_but, PIN_BUT_LEFT, 0);
+    inp_init(&sensor_in, PIN_IN_SENSOR, 0);
+    bool send = true;
     device_set_state(BIT_UPDATE_TIME);
     create_periodic_task(update_time_handler, TIMEOUT_24_HOUR, FOREVER);
     vTaskDelay(1000/portTICK_PERIOD_MS);
     struct tm *tinfo = get_cur_time_tm();
     int day_send = 0;
     for(;;){
-
         device_start_timer();
-
-        bits = device_get_state();
-
-        do{
-            
+        start_run = esp_timer_get_time() / 1000;
+        while(1){
             vTaskDelay(DELAY_MAIN_TASK/portTICK_PERIOD_MS);
+            bits = device_get_state();         
+            cur_time = esp_timer_get_time() / 1000;
+            start_but_val = get_inp_state(&start_but, cur_time, BUT_LONG_PRESS_LATENCY);
+            setting_but_val = get_inp_state(&setting_but, cur_time, BUT_LONG_PRESS_LATENCY);
 
-            cur_time = esp_timer_get_time();
-
-            start_but_val = get_but_state(&start_but, cur_time);
-            setting_but_val = get_but_state(&setting_but, cur_time);
-
-
-            if(setting_but_val == ACT_MODE_1){
+            if(setting_but_val == BUT_PRESS_STATE){
+                ESP_LOGI("", "start but press!");
                 if(bits&BIT_SERVER_RUN){
                     device_clear_state(BIT_SERVER_RUN);
                     start_single_signale(70);
@@ -90,11 +99,13 @@ static void main_task(void *pv)
                     device_set_state(BIT_START_SERVER);
                     start_signale_series(35, 2);
                 }
-            }else if(setting_but_val == ACT_MODE_2){
+            }else if(setting_but_val == BUT_LONG_PRESS_STATE){
+                ESP_LOGI("", "setting but long press!");
                 start_signale_series(30, 5);
                 vTaskDelay(1000/portTICK_PERIOD_MS);
                 change_delay();
-            }else if(start_but_val == ACT_MODE_1){
+            }else if(start_but_val == BUT_PRESS_STATE){
+                ESP_LOGI("", "start but press!");
                 start_single_signale(70);
                 if(bits&BIT_ALARM){
                     if(bits&BIT_ALARM_SOUND){
@@ -104,13 +115,44 @@ static void main_task(void *pv)
                         device_clear_state(BIT_ALARM);
                     }
                 } 
-            } else if(start_but_val == ACT_MODE_2){
+            } else if(start_but_val == BUT_LONG_PRESS_STATE){
+                ESP_LOGI("", "start but long press!");
                 if(bits&BIT_ALARM){
                     start_signale_series(30, 5);
                     device_clear_state(BIT_GUARD_DIS|BIT_ALARM);
+                    set_tap(false);
                 } else {
                     start_signale_series(70, 1);
                     device_set_state(BIT_GUARD_DIS|BIT_ALARM);
+                }
+            }
+
+            sensor_val = get_inp_state(&sensor_in, cur_time, device_get_delay());
+
+            if(sensor_val == NO_DATA){
+                if(bits&BIT_WET_SENSOR){
+                    ESP_LOGI("", "Dry sensor!");
+                    device_clear_state(BIT_WET_SENSOR);
+                    remove_task(blink_alarm_handle);
+                    if(bits&BIT_ALARM && !(bits&BIT_GUARD_DIS) ){
+                         send = true;
+                    }
+                }
+            } else if(sensor_val == SENSOR_WET_STATE){
+                if(!(bits&BIT_WET_SENSOR)){
+                    ESP_LOGI("", "Wet sensor!");
+                    device_set_state(BIT_WET_SENSOR);
+                    create_periodic_task(blink_alarm_handle, TIMEOUT_SEC, FOREVER);
+                }
+            } else if(sensor_val == SENSOR_ALARM_STATE && !(bits&BIT_GUARD_DIS) ){
+                if(!(bits&BIT_ALARM)){
+                    ESP_LOGI("", "Alarm!");
+                    device_set_state(BIT_ALARM); 
+                    remove_task(blink_alarm_handle);
+                    create_periodic_task(alarm_handler, 3*TIMEOUT_SEC, FOREVER);
+                    sleep_time = 5*TIMEOUT_SEC;
+                    send = true;
+                    set_tap(true);
                 }
             }
 
@@ -118,31 +160,12 @@ static void main_task(void *pv)
                 gpio_set_level(PIN_OUT_LED_OK, 0);
             } else {
                 gpio_set_level(PIN_OUT_LED_OK, 1);
-                sensor_val = get_inp_state(&sensor_in, cur_time, device_get_delay());
-                if(sensor_val != NO_DATA){
-                    device_set_state(BIT_WET_SENSOR);
-                    if(sensor_val == ACT_MODE_2 && !(bits&BIT_ALARM)){
-                       device_set_state(BIT_ALARM); 
-                    }
-                } else {
-                    device_clear_state(BIT_WET_SENSOR);
-                }
             }
 
-            is_alarm = bits&BIT_ALARM;
-
-            if(state_alarm != is_alarm){
-                state_alarm = is_alarm;
-                if(is_alarm){
-                    device_set_state(BIT_ALARM_SOUND);
-                    create_periodic_task(alarm_handler, 3*TIMEOUT_SEC, FOREVER);
-                    sleep_time = 5*TIMEOUT_SEC;
-                    send = true;
-                } else {
-                    sleep_time = TIMEOUT_SLEEP;
-                }
-                set_tap(is_alarm);
-                gpio_set_level(PIN_OUT_LED_ALARM, is_alarm);
+            if(bits&BIT_ALARM){
+                gpio_set_level(PIN_OUT_LED_ALARM, 1);
+            } else {
+                gpio_set_level(PIN_OUT_LED_ALARM, 0);
             }
 
             if(send){
@@ -151,26 +174,43 @@ static void main_task(void *pv)
                 day_send = tinfo->tm_wday;
             }
 
-        }while(bits = device_get_state(), bits&BITS_DENIED_SLEEP);
+            if(!(bits&BITS_DENIED_SLEEP)){
+                work_time = cur_time - start_run;
+            }
+
+        }while(work_time < timeout);
 
         if(bits&BIT_ERR_TELEGRAM_SEND){
-            if(! is_alarm && sleep_time < TIMEOUT_MINUTE*30){
+            if(sleep_time < TIMEOUT_MINUTE*30){
                 sleep_time *= 2;
             }
         }
 
         esp_sleep_enable_timer_wakeup(sleep_time * 1000);
-        esp_sleep_enable_gpio_wakeup();
+        esp_sleep_enable_ext0_wakeup(PIN_IN_SENSOR, 0);
+        esp_sleep_enable_ext1_wakeup(PIN_BUT_RIGHT, 0);
         device_stop_timer();
+
+        ESP_LOGI("", "sleep");
+        vTaskDelay(100);
+
         esp_light_sleep_start();
-        if(day_send != tinfo->tm_wday){
-            if( (is_valid_bat_conf() && get_voltage_perc(device_get_bat_conf()) < 20) 
-                || (bits&BIT_IS_TIME && bits&BIT_INFO_NOTIFACTION_EN && tinfo->tm_hour > 8) ){
-                send = true; 
-            }
-        }
+
         if(bits&BIT_ERR_TELEGRAM_SEND){
             device_set_state(BIT_SEND_MESSAGE);
+        }
+        if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER){
+            if(day_send != tinfo->tm_wday){
+                if( (is_valid_bat_conf() && get_voltage_perc(device_get_bat_conf()) < 20) 
+                    || (bits&BIT_IS_TIME && bits&BIT_INFO_NOTIFACTION_EN && tinfo->tm_hour > 8) ){
+                    send = true; 
+                }
+            } 
+            ESP_LOGI("", "weakup timer");
+            timeout = 0;
+        } else {
+             ESP_LOGI("", "weakup gpio");
+             timeout = 5*TIMEOUT_SEC;
         }
 
     }
@@ -186,7 +226,7 @@ static void service_task(void *pv)
     char *message;
     vTaskDelay(100/portTICK_PERIOD_MS);
     int esp_res, wait_client_timeout;
-    bool fail_init_sntp = false;
+
 
     for(;;){
         bits = device_wait_bits_untile(BIT_START_SERVER|BIT_SEND_MESSAGE|BIT_UPDATE_TIME, 
@@ -251,7 +291,7 @@ static void service_task(void *pv)
                 }
             }
             wifi_stop();
-            device_clear_state(BIT_SEND_MESSAGE|BIT_WAIT_SANDING);
+            device_clear_state(BIT_SEND_MESSAGE|BIT_WAIT_SENDING);
         }
     }
 
@@ -296,7 +336,7 @@ static void change_delay()
         } else {
             gpio_set_level(PIN_OUT_LED_OK, 0);
         }
-    }while(gpio_get_level(PIN_BUT_RIGHT) && delay_sec < MAX_DELAY_START_SEC);
+    }while(gpio_get_level(PIN_BUT_RIGHT) == 0 && delay_sec < MAX_DELAY_START_SEC);
     device_commit_changes();
 }
 

@@ -5,44 +5,50 @@
 #include "esp_timer.h"
 
 enum LatencyMS{
-    BUT_DEBOUNCE_TIME  = 200,
-    BUT_LONG_PRESS_TIME = 1000,
+    DEBOUNCE_TIME  = 500,
 };
 
 
 
-int get_but_state(inp_conf_t * button, unsigned cur_time)
+int get_inp_state(inp_conf_t * conf, unsigned cur_time, unsigned mode_2_latency)
 {
-    return get_inp_state(button, cur_time, BUT_LONG_PRESS_TIME);
-}
+    unsigned state_time;
+    const bool active = gpio_get_level((gpio_num_t)conf->pin_num) == conf->active_level;
+    int cur_state = active ? ACT_MODE_0 : NO_DATA;
 
-
-int get_inp_state(inp_conf_t * conf, unsigned cur_time, unsigned other_mode_time)
-{
-    int cur_state = NO_DATA;
-    const bool press = gpio_get_level((gpio_num_t)conf->pin_num);
-    const unsigned state_time = cur_time - conf->start_state_time;
-    if(press != conf->pressed || (press && state_time>other_mode_time)){
-        if(press){
-            if(state_time >= other_mode_time){
+    if(conf->start_state_time == 0){
+        conf->start_state_time = cur_time;
+    } else {
+        state_time = cur_time - conf->start_state_time;
+        if(state_time > DEBOUNCE_TIME){
+            if(active != conf->active){
+                conf->active = active;
+                conf->start_state_time = cur_time; 
+                if(active){
+                    cur_state = ACT_MODE_1;
+                }
+            } else if(active && state_time > mode_2_latency){
                 cur_state = ACT_MODE_2;
+                conf->start_state_time = cur_time; 
             }
-        } else if(state_time>BUT_DEBOUNCE_TIME){
-            cur_state = state_time >= other_mode_time ? ACT_MODE_2 : ACT_MODE_1;
         }
-        conf->pressed = press;
-        conf->start_state_time = cur_time; 
     }
     return cur_state; 
 }
 
-void inp_init(inp_conf_t * conf, int pin_num)
-{   
-    conf->pressed = false;
-    conf->pin_num = pin_num;
+void inp_init(inp_conf_t * conf, int pin_num, bool active_level)
+{
+    conf->active_level = active_level;
     conf->start_state_time = 0;
-    gpio_set_direction(pin_num, GPIO_MODE_INPUT);
-    gpio_set_level(pin_num, 0);
+    conf->active = false;
+    conf->pin_num = pin_num;
+    gpio_config_t in_conf = {
+        .pin_bit_mask = (1ULL << pin_num),
+        .mode = GPIO_MODE_INPUT,
+        in_conf.pull_up_en = active_level ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE,
+        in_conf.pull_down_en = active_level ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
+    };
+    gpio_config(&in_conf);
 }
 
 
