@@ -10,14 +10,15 @@ typedef struct{
     unsigned min_mVolt;
     unsigned max_mVolt;
     unsigned volt_koef;
-}bat_conf_t;
+    int voltage_mv;
+}bat_data_t;
 
 
 
-void adc_init(void);
-int get_voltage_mv(bat_conf_t * bat_conf);
-int get_voltage_perc(bat_conf_t * bat_conf);
-void set_coef_val(bat_conf_t * bat_conf, unsigned real_volt_mv);
+int adc_init(void);
+int get_voltage_mv(bat_data_t * bat_data);
+int get_bat_percentage(bat_data_t * bat_data);
+void set_coef_val(bat_data_t * bat_data, unsigned real_volt_mv);
 
 
 

@@ -134,37 +134,40 @@ const char *  device_get_ssid()
 {
     return main_data.ssid;
 }
+
 const char *  device_get_pwd()
 {
     return main_data.pwd;
 }
+
 const char *  device_get_token()
 {
     return main_data.token;
 }
+
 const char *  device_get_chat_id()
 {
     return main_data.chat_id;
 }
 
-bool is_valid_bat_conf()
+bool is_valid_bat_data()
 {
-    return main_data.bat_conf.max_mVolt != 0 
-            && main_data.bat_conf.min_mVolt != 0 
-            && main_data.bat_conf.volt_koef != 0;
+    return main_data.bat_data.max_mVolt < 28000 
+            && main_data.bat_data.min_mVolt >2000
+            && main_data.bat_data.volt_koef != 0;
 }
 
-bat_conf_t * device_get_bat_conf()
+bat_data_t * device_get_bat_data()
 {
-    return &main_data.bat_conf;
+    return &main_data.bat_data;
 }
 
-int device_set_bat_conf(unsigned min_volt, unsigned max_volt, unsigned real_volt)
+int device_set_bat_data(int min_volt, int max_volt, int real_volt)
 {
-    if(min_volt > 2000 && max_volt < 28000){
-        main_data.bat_conf.min_mVolt = min_volt;
-        main_data.bat_conf.max_mVolt = max_volt;
-        set_coef_val(&main_data.bat_conf, real_volt);
+    if(min_volt > 2000 && max_volt < 28000 && real_volt > min_volt){
+        main_data.bat_data.min_mVolt = min_volt;
+        main_data.bat_data.max_mVolt = max_volt;
+        set_coef_val(&main_data.bat_data, real_volt);
         changed_main_data = true;
         return ESP_OK;
     }
@@ -175,6 +178,7 @@ int device_set_delay(unsigned delay_to_alarm_ms)
 {
     if(delay_to_alarm_ms <= MAX_ALARM_DELAY_MS){
         main_data.delay_to_alarm_ms = delay_to_alarm_ms;
+        changed_main_data = true;
         return ESP_OK;
     }
     return ESP_FAIL;

@@ -5,12 +5,14 @@
 #include "device_task.h"
 #include "periodic_task.h"
 
+#include "adc_reader.h"
+#include "esp_log.h"
 
 
 void app_main(void) 
 {
+    adc_init();
     device_init();
     device_init_timer();
     task_init();
-
 }

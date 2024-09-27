@@ -127,7 +127,7 @@ static esp_err_t set_wifi_conf_handler(httpd_req_t *req)
     cJSON *root, *ssid_name_j, *pwd_wifi_j;
     root = get_json_data(req);
     if(!root){
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, MES_NO_MEMORY);
+        SEND_SERVER_ERR(req, MES_NO_MEMORY);
         return ESP_FAIL;
     }
 
@@ -152,16 +152,38 @@ static esp_err_t set_battery_conf_handler(httpd_req_t *req)
     cJSON *root, *min_mv_j, *max_mv_j, *real_volt_j;
     root = get_json_data(req);
     if(!root){
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, MES_NO_MEMORY);
+        SEND_SERVER_ERR(req, MES_NO_MEMORY);
         return ESP_FAIL;
     }
 
-    min_mv_j = cJSON_GetObjectItemCaseSensitive(root, "Min voltage, mV");
-    max_mv_j = cJSON_GetObjectItemCaseSensitive(root, "Max voltage, mV");
-    real_volt_j = cJSON_GetObjectItemCaseSensitive(root, "Real voltage, mV");
+    min_mv_j = cJSON_GetObjectItemCaseSensitive(root, "Min");
+    max_mv_j = cJSON_GetObjectItemCaseSensitive(root, "Max");
+    real_volt_j = cJSON_GetObjectItemCaseSensitive(root, "Real");
 
-    if(cJSON_IsNumber(min_mv_j) && cJSON_IsNumber(max_mv_j) && cJSON_IsNumber(real_volt_j)
-    && device_set_bat_conf(min_mv_j->valueint, max_mv_j->valueint, real_volt_j->valueint)){
+    if(cJSON_IsNumber(min_mv_j) 
+            && cJSON_IsNumber(max_mv_j) && cJSON_IsNumber(real_volt_j) 
+            && device_set_bat_data(min_mv_j->valueint, max_mv_j->valueint, real_volt_j->valueint) == ESP_OK){
+        ;
+        httpd_resp_sendstr(req, MES_SUCCESSFUL);
+    } else {
+        SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT);
+    }
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+
+static esp_err_t set_placename_handler(httpd_req_t *req)
+{
+    cJSON *root, *placename_j;
+    root = get_json_data(req);
+    if(!root){
+        SEND_SERVER_ERR(req, MES_NO_MEMORY);
+        return ESP_FAIL;
+    }
+    placename_j = cJSON_GetObjectItemCaseSensitive(root, "Name");
+    if(cJSON_IsString(placename_j) && (placename_j->valuestring != NULL)){
+        device_set_placename(placename_j->valuestring);
         httpd_resp_sendstr(req, MES_SUCCESSFUL);
     } else {
         SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT);
@@ -176,6 +198,7 @@ static esp_err_t set_telegram_data_handler(httpd_req_t *req)
     root = get_json_data(req);
     if(!root){
         SEND_SERVER_ERR(req, MES_NO_MEMORY);
+        return ESP_FAIL;
     }
     chat_id_j = cJSON_GetObjectItemCaseSensitive(root, "ChatID");
     token_j = cJSON_GetObjectItemCaseSensitive(root, "Token");
@@ -207,13 +230,13 @@ static const char *get_chip(int model_id)
 static esp_err_t get_info_handler(httpd_req_t *req)
 {
     char * server_buf = (char *)req->user_ctx;
-    bat_conf_t *bat_conf = device_get_bat_conf();
+    bat_data_t *bat_data = device_get_bat_data();
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
     snprintf(server_buf, 200, "chip: %s\nvoltage: %u mV\nbattery: %u%%\n%s",
                 get_chip(chip_info.model), 
-                get_voltage_mv(bat_conf),
-                get_voltage_perc(bat_conf),
+                get_voltage_mv(bat_data),
+                get_bat_percentage(bat_data),
                 snprintf_time("%c")
             );
     httpd_resp_sendstr(req, server_buf);
@@ -224,7 +247,7 @@ static esp_err_t get_info_handler(httpd_req_t *req)
 static esp_err_t get_settings_handler(httpd_req_t *req)
 {
     cJSON * root = cJSON_CreateObject();
-    bat_conf_t *bat_conf = device_get_bat_conf();
+    bat_data_t *bat_data = device_get_bat_data();
     if(root){
         cJSON_AddStringToObject(root, "SSID", device_get_ssid());
         cJSON_AddStringToObject(root, "Password", device_get_pwd());
@@ -234,9 +257,9 @@ static esp_err_t get_settings_handler(httpd_req_t *req)
         cJSON_AddNumberToObject(root, "Sec", device_get_delay() / 1000);
         cJSON_AddNumberToObject(root, "Offset", device_get_offset());
         cJSON_AddNumberToObject(root, "Status", device_get_state());
-        cJSON_AddNumberToObject(root, "Real voltage, mV", get_voltage_mv(bat_conf));
-        cJSON_AddNumberToObject(root, "Min voltage, mV", bat_conf->min_mVolt);
-        cJSON_AddNumberToObject(root, "Max voltage, mV", bat_conf->max_mVolt);
+        cJSON_AddNumberToObject(root, "Real voltage, mV", get_voltage_mv(bat_data));
+        cJSON_AddNumberToObject(root, "Min voltage, mV", bat_data->min_mVolt);
+        cJSON_AddNumberToObject(root, "Max voltage, mV", bat_data->max_mVolt);
         char *data_to_send = cJSON_Print(root);
         cJSON_Delete(root);
         if(data_to_send){
@@ -275,15 +298,17 @@ static esp_err_t set_delay_handler(httpd_req_t *req)
     if(cJSON_IsNumber(delay_to_alarm_j)){
         delay_to_alarm = delay_to_alarm_j->valueint;
         if(device_set_delay(delay_to_alarm*1000) == ESP_OK){
-            cJSON_Delete(root);
             httpd_resp_sendstr(req, MES_SUCCESSFUL);
+            cJSON_Delete(root);
             return ESP_OK;
         }
-    }
+    } 
     cJSON_Delete(root);
     SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT);
     return ESP_OK;
 }
+
+
 
 static esp_err_t set_offset_handler(httpd_req_t *req)
 {
@@ -305,8 +330,8 @@ static esp_err_t set_offset_handler(httpd_req_t *req)
             return ESP_OK;
         }
     }
-    cJSON_Delete(root);
     SEND_REQ_ERR(req, MES_BAD_DATA_FOMAT);
+    cJSON_Delete(root);
     return ESP_OK;
 }
 
@@ -430,6 +455,14 @@ int init_server(char *server_buf)
         .user_ctx = server_buf
     };
     httpd_register_uri_handler(server, &set_offset_uri);
+
+    httpd_uri_t set_placename_uri = {
+        .uri      = "/Place",
+        .method   = HTTP_POST,
+        .handler  = set_placename_handler,
+        .user_ctx = server_buf
+    };
+    httpd_register_uri_handler(server, &set_placename_uri);
 
     httpd_uri_t redir_uri = {
         .uri      = "/*",

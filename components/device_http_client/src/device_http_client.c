@@ -8,7 +8,6 @@
 #define MAX_KEY_NUM 10
 
 extern char network_buf[];
-static char url[SIZE_URL_BUF];
 
 static size_t get_value_ptrs(char ***value_list, char *data_buf, const size_t buf_len, const char *key)
 {
@@ -109,6 +108,18 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+static void fix_url(char *dst, const char *src) 
+{
+    while (*src) {
+        if ((*src >= 'a' && *src <= 'z') || (*src >= 'A' && *src <= 'Z') || (*src >= '0' && *src <= '9')) {
+            *dst++ = *src;
+        } else {
+            dst += sprintf(dst, "%%%02X", (unsigned char)*src);
+        }
+        src++;
+    }
+    *dst = '\0';
+}
 
 int device_update_time()
 {
@@ -148,17 +159,15 @@ int device_update_time()
 
 int send_telegram_message(const char *token, const char *chat_id, const char *message) 
 {
-    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
-                token, chat_id, message);
+    if(message == NULL || strlen(token) == 0 || strlen(chat_id) == 0)return ESP_FAIL;
+    char encoded_message[512]; 
+    fix_url(encoded_message, message);
+    snprintf(network_buf, NET_BUF_LEN, "https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
+                token, chat_id, encoded_message);
 
     esp_http_client_config_t config = {
-        .url = url,
-        .event_handler = http_event_handler,
-        .user_data = (void*)network_buf,    
+        .url = network_buf,
         .method = HTTP_METHOD_GET,
-        .buffer_size = NET_BUF_LEN,
-        .auth_type = HTTP_AUTH_TYPE_NONE,
-        .skip_cert_common_name_check = true
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);

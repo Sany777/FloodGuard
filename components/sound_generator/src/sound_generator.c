@@ -48,12 +48,10 @@ void sound_off()
 
 void start_signale_series(unsigned delay, unsigned count)
 {
-    if(!(device_get_state()&BIT_WAIT_SIGNALE) && delay){
-        _delay = delay;
-        continue_signale();
-        if(count>1){
-            create_periodic_task(continue_signale, _delay, count-1);
-        }
+    _delay = delay*2;
+    continue_signale();
+    if(count){
+        create_periodic_task(continue_signale, _delay, count-1);
     }
 }
 

@@ -6,45 +6,35 @@
 
 
 #define ADC_CHANNEL ADC1_CHANNEL_1  // GPIO13 (ESP32)
-#define ADC_ATTEN ADC_ATTEN_DB_0     
+#define ADC_ATTEN ADC_ATTEN_DB_12     
 
 
-
-
-void adc_init(void)
+int adc_init(void)
 {
-    adc1_config_width(ADC_WIDTH_BIT_12);
-    adc2_config_channel_atten(ADC_CHANNEL, ADC_ATTEN);
+    int res = adc1_config_width(ADC_WIDTH_BIT_12);
+    if(res == ESP_OK){
+        res = adc2_config_channel_atten(ADC_CHANNEL, ADC_ATTEN);
+    }
+    return res;
 }
 
-// max adc_value = 4095 for 12 bit
-int get_voltage_mv(bat_conf_t * bat_conf)
+int get_voltage_mv(bat_data_t * bat_data)
 {
     int adc_value = 0;
-    if(bat_conf->volt_koef == 0) return -1;
-    adc2_get_raw(ADC_CHANNEL, ADC_WIDTH_BIT_12, &adc_value);
-    return (adc_value * bat_conf->volt_koef) / 1000 ;
+    if(bat_data->volt_koef == 0) return -1;
+    int res = adc2_get_raw(ADC_CHANNEL, ADC_WIDTH_BIT_12, &adc_value);
+    bat_data->voltage_mv = (adc_value * bat_data->volt_koef) / 1000 ;
+    return res;
 }
 
-void set_coef_val(bat_conf_t * bat_conf, unsigned real_volt_mv)
+void set_coef_val(bat_data_t * bat_data, unsigned real_volt_mv)
 {
-    unsigned val = 0;
-    bat_conf->volt_koef = 1000;
-    while(val = get_voltage_mv(bat_conf), val < 1000)vTaskDelay(10);
-    bat_conf->volt_koef = (real_volt_mv * 1000) / val ;
+    bat_data->volt_koef = (real_volt_mv * 1000) / bat_data->voltage_mv ;
 }
 
-int get_voltage_perc(bat_conf_t * bat_conf)
+int get_bat_percentage(bat_data_t * bat_data)
 {
-    unsigned volt = 0;
-    int timeout = 0;
-    if(bat_conf->max_mVolt == 0 || bat_conf->min_mVolt == 0) return 0;
-    while(volt = get_voltage_mv(bat_conf), volt < 1000){
-        vTaskDelay(10);  
-        if(timeout > 5000) return 0;
-        timeout += 10;
-    }
-    if (volt >= bat_conf->max_mVolt) return 100;
-    if (volt <= bat_conf->min_mVolt) return 0;
-    return ((get_voltage_mv(bat_conf) - bat_conf->min_mVolt)*100) / (bat_conf->max_mVolt - bat_conf->min_mVolt);
+    if (bat_data->voltage_mv >= bat_data->max_mVolt) return 100;
+    if (bat_data->voltage_mv <= bat_data->min_mVolt) return 0;
+    return ((bat_data->voltage_mv - bat_data->min_mVolt)*100) / (bat_data->max_mVolt - bat_data->min_mVolt);
 }

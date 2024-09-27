@@ -1,5 +1,3 @@
-
-// [formName [type, max limit, min limit,[inputNames],]]
 const FORMS_LIST = [
   ['WiFi',[['text','32','1',['SSID']],['text','32','8',['Password']]]],
   ['Telegram',[['text','32','1',['ChatID']],['text','55','32',['Token']]]],
@@ -132,19 +130,20 @@ function sendData(formName)
   if(childsList){
     for(const child of childsList){
       if(child.value && child.name){
+        const fild_name = child.name.split(' ')[0];
         if(child.type === 'checkbox'){
           if(child.checked){
             flags |= 1<<fi;
           }
           fi++;
         } else if(child.type == 'number'){
-          js[child.name] = +child.value;
+          js[fild_name] = +child.value;
         } else {
-          js[child.name] = child.value;
+          js[fild_name] = child.value;
         }
       }
     }
-    const  path = formName.split(" ")[0];
+    const path = formName.split(' ')[0];
     if(fi){
       sendDataForm(path, flags);
     } else {

@@ -55,7 +55,7 @@ enum Bits{
     BIT_WAIT_SENDING            = (1<<20),
     // BIT_CHANGE_SENSOR_STATE     = (1<<21),
     
-    STORED_FLAGS                = (BIT_GUARD_DIS|BIT_INFO_NOTIFACTION_EN|BIT_NOTIFICATION_DIS|BIT_LIMESCALE_PREVENTION),
+    STORED_FLAGS                = (BIT_INFO_NOTIFACTION_EN|BIT_NOTIFICATION_DIS|BIT_LIMESCALE_PREVENTION),
     BITS_DENIED_SLEEP           = (BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_SEND_MESSAGE|BIT_WAIT_SENDING),
 };
 
@@ -68,7 +68,7 @@ typedef struct {
     unsigned config;
     int offset;
     unsigned delay_to_alarm_ms;
-    bat_conf_t bat_conf;
+    bat_data_t bat_data;
 } settings_data_t;
 
 
@@ -111,8 +111,8 @@ const char  * device_get_ssid();
 const char  * device_get_pwd();
 const char  * device_get_token();
 const char  * device_get_chat_id();
-bat_conf_t * device_get_bat_conf();
-int device_set_bat_conf(unsigned min_volt, unsigned max_volt, unsigned real_volt);
+bat_data_t * device_get_bat_data();
+int device_set_bat_data(int min_volt, int max_volt, int real_volt);
 int device_set_delay(unsigned delay_to_alarm_ms);
 const char * device_get_placename();
 void device_init();
@@ -120,7 +120,7 @@ void device_set_state_isr(unsigned bits);
 void  device_clear_state_isr(unsigned bits);
 int device_get_offset();
 int device_get_delay();
-bool is_valid_bat_conf();
+bool is_valid_bat_data();
 
 #define device_wait_bits(bits) \
     device_wait_bits_untile(bits, 12000/portTICK_PERIOD_MS)
