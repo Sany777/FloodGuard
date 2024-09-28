@@ -8,7 +8,7 @@ extern "C" {
 
 
 #include <sys/time.h>
-#include "stdbool.h"
+
 
 
 struct tm* get_cur_time_tm(void);

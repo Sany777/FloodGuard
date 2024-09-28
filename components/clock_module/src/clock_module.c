@@ -2,12 +2,8 @@
 
 #include <time.h>
 #include "string.h"
-#include "esp_sntp.h"
-#include "wifi_service.h"
 #include "esp_err.h"
 
-#include "device_common.h"
-#include "periodic_task.h"
 
 
 struct tm* get_cur_time_tm(void)
@@ -52,8 +48,7 @@ void set_offset(int offset_hours)
 const char* snprintf_time(const char *format)
 {
     static char text_buf[100];
-    struct tm *timeinfo = get_cur_time_tm();
-    strftime(text_buf, sizeof(text_buf), format, timeinfo);
+    strftime(text_buf, sizeof(text_buf), format, get_cur_time_tm());
     return text_buf;
 }
 

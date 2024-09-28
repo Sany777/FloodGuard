@@ -27,9 +27,6 @@ int read_flash(const char* data_name, unsigned char *buf, unsigned data_size)
     nvs_handle_t nvs_handle;
     if(data_size == 0)return ESP_OK;
     if(buf == NULL)return ESP_ERR_NO_MEM;
-    if(!is_init && init_nvs() != ESP_OK){
-        return ESP_FAIL;
-    }
     CHECK_AND_RET_ERR(nvs_open(SPACE_NAME, NVS_READONLY, &nvs_handle));
     CHECK_AND_RET_ERR(nvs_get_blob(nvs_handle, data_name, buf, &data_size));
     nvs_close(nvs_handle);

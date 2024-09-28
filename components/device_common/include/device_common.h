@@ -27,7 +27,8 @@ enum BasicConst{
     FORECAST_LIST_SIZE      = 5,
     NET_BUF_LEN             = 5000,
     MAX_DELAY_START_SEC     = 240,
-    
+    MAX_BAT_mV              = 28000,
+    MIN_BAT_mV              = 2000
 };
 
 enum Bits{
@@ -46,15 +47,15 @@ enum Bits{
     BIT_SEND_MESSAGE            = (1<<12),
     BIT_IS_LOW_BAT              = (1<<13),
     BIT_ALARM_SOUND             = (1<<14),
-    BIT_WAIT_BUT_INPUT          = (1<<15),
+    BIT_WAIT_TAP_MOVING         = (1<<15),
     BIT_WAIT_SIGNALE            = (1<<18),
     BIT_SERVER_RUN              = (1<<16),
     BIT_UPDATE_TIME             = (1<<17),
     BIT_IS_TIME                 = (1<<18),
     BIT_IS_AP_CLIENT            = (1<<19),
     BIT_WAIT_SENDING            = (1<<20),
-    // BIT_CHANGE_SENSOR_STATE     = (1<<21),
-    
+
+    BITS_DENIED_ANTILIMESCALE   = (BIT_ALARM|BIT_WET_SENSOR|BIT_GUARD_DIS|BIT_WAIT_TAP_MOVING),
     STORED_FLAGS                = (BIT_INFO_NOTIFACTION_EN|BIT_NOTIFICATION_DIS|BIT_LIMESCALE_PREVENTION),
     BITS_DENIED_SLEEP           = (BIT_START_SERVER|BIT_WAIT_SIGNALE|BIT_SEND_MESSAGE|BIT_WAIT_SENDING),
 };

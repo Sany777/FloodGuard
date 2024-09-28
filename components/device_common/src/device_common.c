@@ -152,8 +152,8 @@ const char *  device_get_chat_id()
 
 bool is_valid_bat_data()
 {
-    return main_data.bat_data.max_mVolt < 28000 
-            && main_data.bat_data.min_mVolt >2000
+    return main_data.bat_data.max_mVolt < MAX_BAT_mV
+            && main_data.bat_data.min_mVolt > MIN_BAT_mV
             && main_data.bat_data.volt_koef != 0;
 }
 
@@ -194,9 +194,6 @@ static int read_data()
 {
     CHECK_AND_RET_ERR(read_flash(MAIN_DATA_NAME, (unsigned char *)&main_data, sizeof(main_data)));
     device_set_state(main_data.config&STORED_FLAGS);
-    if(main_data.delay_to_alarm_ms == 0){
-        main_data.delay_to_alarm_ms = 15*1000;
-    }
     return ESP_OK;
 }
 

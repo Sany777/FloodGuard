@@ -11,7 +11,7 @@
 #define DEFAULT_DELAY           100
 
 
-static void IRAM_ATTR stop_signale();
+static void stop_signale();
 
 static unsigned _delay;
 
@@ -37,8 +37,6 @@ void long_signale()
     start_single_signale(50);
 }
 
-
-
 void sound_off()
 {
     remove_task(continue_signale);
@@ -54,8 +52,6 @@ void start_signale_series(unsigned delay, unsigned count)
         create_periodic_task(continue_signale, _delay, count-1);
     }
 }
-
-
 
 static IRAM_ATTR void stop_signale()
 {

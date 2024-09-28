@@ -12,7 +12,7 @@
 void app_main(void) 
 {
     adc_init();
-    device_init();
     device_init_timer();
+    device_init();
     task_init();
 }

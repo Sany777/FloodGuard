@@ -34,7 +34,6 @@ static int insert_task_to_list(periodic_task_list_data_t *list,
                                             periodic_func_t func,
                                             uint64_t delay_ms, 
                                             int count);
-
 static  void periodic_timer_cb(void*);
 
 static periodic_task_list_data_t* IRAM_ATTR find_task(periodic_task_list_data_t *list, 
@@ -156,7 +155,7 @@ int device_init_timer()
         const esp_timer_create_args_t periodic_timer_args = {
             .callback = &periodic_timer_cb,
             .arg = NULL,
-            .name = "device timer",
+            .name = "peridic timer",
             .skip_unhandled_events = true
         };
         return esp_timer_create(&periodic_timer_args, &periodic_timer);
